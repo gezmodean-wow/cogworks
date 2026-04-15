@@ -5,6 +5,8 @@
 ## Version: @project-version@
 ## X-Category: Library
 ## X-Website: https://github.com/gezmodean-wow/cogworks
+## X-Curse-Project-ID: 1514607
+## X-Wago-ID: BKpg7Z6E
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
