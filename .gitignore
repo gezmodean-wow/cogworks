@@ -1,0 +1,8 @@
+.claude/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*.zip
+.release/

@@ -1,0 +1,14 @@
+## Interface: 120001
+## Title: Cogworks
+## Notes: The mainspring of the Cogworks suite — shared core for FlipQueue, Tempo, Maxcraft, and beyond.
+## Author: Gezmodean
+## Version: @project-version@
+## X-Category: Library
+## X-Website: https://github.com/gezmodean-wow/cogworks
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+
+Cogworks-1.0\Cogworks-1.0.lua
+
+Standalone\Standalone.lua
