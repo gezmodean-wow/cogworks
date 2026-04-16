@@ -16,7 +16,8 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 ## What's inside
 
 - **Event bus** — a shared `CallbackHandler`-backed registry with a canonical event list (`SaleLogged`, `CraftCompleted`, `ResetDue`, `InventoryChanged`, `GoldChanged`, ...) so cogs can signal each other without hard dependencies
-- **Theme constants** — the dark + gold + arcane-purple palette used across every cog
+- **Theme constants** — the dark + gold + arcane-purple palette used across every cog, plus backdrop templates
+- **UI widget factories** — `CreateButton`, `CreateCheckbox`, `CreateIconButton`, `CreateSectionHeader`, `CreateProgressBar`, `CreateNavButton` / `SetNavButtonActive` — themed widgets that every cog can use instead of duplicating the same dark+gold UI code
 - **Character-key helpers** — canonical `"Name-RealmNormalized"` keys that match Syndicator's convention so cogworks data and Syndicator data can be cross-referenced without a translation layer
 - **Addon registry** — each cog registers itself on load; any cog can enumerate its installed siblings for About panels or cross-promotion
 - **Syndicator bridge** — a capability detector so cogs that consume Syndicator share one code path
@@ -65,6 +66,12 @@ end)
 
 -- Fire one
 cw:Fire(cw.Events.CraftCompleted, recipeID, cw:GetCharacterKey())
+
+-- Use shared UI widgets
+local btn = cw:CreateButton(myFrame, "Save", 100, 24, function() ... end)
+local cb  = cw:CreateCheckbox(myFrame, "Auto-scan", "Scan bags on login", true, function(v) ... end)
+local bar = cw:CreateProgressBar(myFrame, 200, 14)
+bar:SetProgress(3, 10)
 ```
 
 ## Versioning
