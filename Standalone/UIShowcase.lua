@@ -131,13 +131,15 @@ local function createShowcase()
 
   -- Build nav buttons
   local navDefs = {
-    { key = "gears",    label = "Gear Assembly", icon = "Interface\\Icons\\INV_Misc_Gear_01" },
+    { key = "gears",    label = "Gears",       icon = "Interface\\Icons\\INV_Misc_Gear_01" },
     { key = "settings", label = "Settings",    icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
+    { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
+    { key = "popups",   label = "Popups",      icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
-    { key = "controls", label = "Controls",    icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
-    { key = "nav",      label = "Navigation",  icon = "Interface\\Buttons\\UI-MicroButton-EJ-Up" },
+    { key = "controls", label = "Controls",    icon = "Interface\\Buttons\\UI-MicroButton-EJ-Up" },
+    { key = "nav",      label = "Navigation",  icon = "Interface\\Buttons\\UI-MicroButton-Socials-Up" },
     { key = "theme",    label = "Theme",       icon = "Interface\\Buttons\\UI-MicroButton-Collections-Up" },
-    { key = "layout",   label = "Layout",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
+    { key = "layout",   label = "Layout",      icon = "Interface\\Icons\\Trade_Engineering" },
   }
 
   local navHeader = cw:CreateSectionHeader(sidebar, "Pages", -12)
@@ -174,7 +176,6 @@ local function createPageFrame(parent)
     child:SetWidth(parent:GetWidth() - 40)
   end)
 
-  scroll:SetAllPoints()
   return scroll, child
 end
 
@@ -805,6 +806,166 @@ pages.gears = function(parent)
 end
 
 -- ============================================================================
+-- Page: Tables
+-- ============================================================================
+
+pages.tables = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local y = 0
+
+  local header = cw:CreateSectionHeader(f, "CreateScrollTable — sortable, resizable columns", -8)
+
+  -- Table container
+  local tableFrame = CreateFrame("Frame", nil, f)
+  tableFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -28)
+  tableFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 40)
+
+  local columns = {
+    { key = "name",    label = "Character",  width = 120, sortable = true },
+    { key = "realm",   label = "Realm",      width = 100, sortable = true },
+    { key = "class",   label = "Class",      width = 90,  sortable = true },
+    { key = "level",   label = "Level",      width = 50,  sortable = true, align = "RIGHT" },
+    { key = "gold",    label = "Gold",       width = 80,  sortable = true, align = "RIGHT",
+      format = function(v) return string.format("%s|cffffd100g|r", v or 0) end },
+    { key = "status",  label = "Status",     width = 80,  sortable = true },
+  }
+
+  local tbl = cw:CreateScrollTable(tableFrame, columns)
+  tbl:SetSort("name", true)
+
+  -- Generate fake data
+  local names = { "Gezmodean", "Chronosmith", "Brasswind", "Ticktock", "Springcoil",
+    "Gearheart", "Tempora", "Auricog", "Ironpawl", "Escapement",
+    "Mainspring", "Ratchetjaw", "Pendulum", "Oscillar", "Tourbillon",
+    "Fusee", "Detent", "Arbor", "Pinion", "Verge" }
+  local realms = { "Stormrage", "Illidan", "Area 52", "Tichondrius", "Sargeras" }
+  local classes = { "Warrior", "Paladin", "Hunter", "Rogue", "Priest", "Mage",
+    "Warlock", "Monk", "Druid", "Evoker", "Death Knight", "Demon Hunter", "Shaman" }
+  local statuses = { "Active", "Inactive", "Alt", "Bank" }
+
+  local fakeData = {}
+  for i, name in ipairs(names) do
+    fakeData[i] = {
+      name   = name,
+      realm  = realms[(i - 1) % #realms + 1],
+      class  = classes[(i - 1) % #classes + 1],
+      level  = 60 + (i * 3) % 21,
+      gold   = math.floor(math.random() * 500000),
+      status = statuses[(i - 1) % #statuses + 1],
+      _tooltipText = name .. " — click for details",
+      _tooltipExtra = "Last login: " .. (i * 7 % 30 + 1) .. " days ago",
+    }
+  end
+
+  tbl:SetData(fakeData)
+  tbl:SetOnRowClick(function(data, button, idx)
+    cw:Print("Cogworks", "Clicked row " .. idx .. ": " .. data.name .. " (" .. button .. ")")
+  end)
+
+  -- Bottom info bar
+  local info = f:CreateFontString(nil, "OVERLAY")
+  info:SetFontObject(cw.Fonts.small)
+  info:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 12)
+  info:SetText("|cffd4a017" .. #fakeData .. " rows|r — click column headers to sort, drag borders to resize")
+  info:SetTextColor(unpack(T.textDim))
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Popups
+-- ============================================================================
+
+pages.popups = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+  local scroll, c = createPageFrame(f)
+
+  local y = 0
+
+  cw:CreateSectionHeader(c, "CreatePopup — modal dialog", y)
+  y = y - 22
+
+  local desc = c:CreateFontString(nil, "OVERLAY")
+  desc:SetFontObject(cw.Fonts.small)
+  desc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  desc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
+  desc:SetJustifyH("LEFT"); desc:SetWordWrap(true)
+  desc:SetText("Popups are modal dialogs with a dark overlay, draggable title bar, content area, and action buttons. ESC to dismiss. Use ShowConfirmDialog for yes/no prompts.")
+  desc:SetTextColor(unpack(T.textDim))
+  y = y - 40
+
+  -- Basic popup
+  local basicBtn = cw:CreateButton(c, "Open Basic Popup", 180, 28, function()
+    local popup = cw:CreatePopup({
+      title = "Basic Popup", width = 400, height = 200,
+    })
+    local msg = popup.content:CreateFontString(nil, "OVERLAY")
+    msg:SetFontObject(cw.Fonts.normal)
+    msg:SetAllPoints()
+    msg:SetJustifyH("LEFT"); msg:SetJustifyV("TOP"); msg:SetWordWrap(true)
+    msg:SetText("This is a basic popup with a content area and action buttons. You can put any widgets in the content area — forms, lists, whatever the cog needs.\n\nDrag the title bar to move it. Press ESC or click the X to close.")
+    msg:SetTextColor(unpack(T.text))
+    popup:SetButtons({
+      { label = "Got It" },
+    })
+    popup:Show()
+  end)
+  basicBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - 36
+
+  -- Confirm dialog
+  local confirmBtn = cw:CreateButton(c, "Show Confirm Dialog", 180, 28, function()
+    cw:ShowConfirmDialog(
+      "Delete Character Data?",
+      "This will permanently delete all saved data for Gezmodean-Stormrage. This action cannot be undone.",
+      function() cw:Print("Cogworks", "Confirmed!") end,
+      function() cw:Print("Cogworks", "Cancelled.") end
+    )
+  end)
+  confirmBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - 36
+
+  -- Multi-button popup
+  local multiBtn = cw:CreateButton(c, "Multi-Button Popup", 180, 28, function()
+    local popup = cw:CreatePopup({
+      title = "Export Options", width = 420, height = 180,
+    })
+    local msg = popup.content:CreateFontString(nil, "OVERLAY")
+    msg:SetFontObject(cw.Fonts.normal)
+    msg:SetAllPoints()
+    msg:SetJustifyH("LEFT"); msg:SetJustifyV("TOP"); msg:SetWordWrap(true)
+    msg:SetText("Choose an export format for your data.")
+    msg:SetTextColor(unpack(T.text))
+    popup:SetButtons({
+      { label = "CSV", width = 70, onClick = function() cw:Print("Cogworks", "Exported as CSV") end },
+      { label = "JSON", width = 70, onClick = function() cw:Print("Cogworks", "Exported as JSON") end },
+      { label = "Cancel", width = 70 },
+    })
+    popup:Show()
+  end)
+  multiBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - 50
+
+  cw:CreateSectionHeader(c, "Usage", y)
+  y = y - 22
+
+  local usage = c:CreateFontString(nil, "OVERLAY")
+  usage:SetFontObject(cw.Fonts.small)
+  usage:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  usage:SetPoint("RIGHT", c, "RIGHT", -8, 0)
+  usage:SetJustifyH("LEFT"); usage:SetWordWrap(true)
+  usage:SetText("local popup = cw:CreatePopup({ title=\"...\", width=400, height=200 })\n-- Add widgets to popup.content\npopup:SetButtons({ {label=\"OK\", onClick=fn}, {label=\"Cancel\"} })\npopup:Show()\n\n-- Shortcut:\ncw:ShowConfirmDialog(\"Title\", \"Message\", onConfirm, onCancel)")
+  usage:SetTextColor(unpack(T.textDim))
+
+  y = y - 100
+  c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
 -- Page: Settings
 -- ============================================================================
 
@@ -815,49 +976,53 @@ pages.settings = function(parent)
 
   local y = 0
 
+  -- Font Family
+  cw:CreateSectionHeader(c, "Font Family", y)
+  y = y - 22
+
+  local familyLabel = c:CreateFontString(nil, "OVERLAY")
+  familyLabel:SetFontObject(cw.Fonts.normal)
+  familyLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  familyLabel:SetText("Current: " .. (cw.FontFamilies[cw:GetSetting("fontFamily") or "default"] or {}).label)
+  familyLabel:SetTextColor(unpack(T.text))
+  y = y - 28
+
+  local familyOrder = { "default", "arial", "morpheus", "skurri" }
+  local xOff = 8
+  for _, fk in ipairs(familyOrder) do
+    local fam = cw.FontFamilies[fk]
+    local btn = cw:CreateButton(c, fam.label, 110, 24, function()
+      cw:SetSetting("fontFamily", fk)
+      familyLabel:SetText("Current: " .. fam.label)
+    end)
+    btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
+    xOff = xOff + 118
+    if xOff > 380 then xOff = 8; y = y - 32 end
+  end
+  y = y - 40
+
+  -- Font Scale
   cw:CreateSectionHeader(c, "Font Scale", y)
   y = y - 22
 
-  local fontDesc = c:CreateFontString(nil, "OVERLAY")
-  fontDesc:SetFontObject(cw.Fonts.small)
-  fontDesc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  fontDesc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
-  fontDesc:SetJustifyH("LEFT")
-  fontDesc:SetWordWrap(true)
-  fontDesc:SetText("Adjusts all Cogworks-built widget text. Cogs that use cw.Fonts will pick up the change automatically. Persisted in CogworksDB.")
-  fontDesc:SetTextColor(unpack(T.textDim))
-  y = y - 36
-
-  -- Current value display
   local fontValText = c:CreateFontString(nil, "OVERLAY")
   fontValText:SetFontObject(cw.Fonts.normal)
   fontValText:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
   fontValText:SetText("Current: " .. string.format("%.0f%%", cw:GetSetting("fontScale") * 100))
   fontValText:SetTextColor(unpack(T.text))
-
   y = y - 28
 
-  -- Font scale buttons
   local scales = { 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4 }
-  local fontBtns = {}
-  local xOff = 8
+  xOff = 8
   for _, s in ipairs(scales) do
     local label = string.format("%.0f%%", s * 100)
-    local btn = cw:CreateButton(c, label, 56, 24, function()
+    local btn = cw:CreateButton(c, label, 52, 24, function()
       cw:SetSetting("fontScale", s)
       fontValText:SetText("Current: " .. label)
-      for _, fb in ipairs(fontBtns) do
-        fb.text:SetTextColor(unpack(T.text))
-      end
     end)
     btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
-    if s == cw:GetSetting("fontScale") then
-      btn.text:SetTextColor(unpack(T.gold))
-    end
-    fontBtns[#fontBtns + 1] = btn
-    xOff = xOff + 62
+    xOff = xOff + 58
   end
-
   y = y - 40
 
   -- Font preview
@@ -870,7 +1035,6 @@ pages.settings = function(parent)
     { key = "small",  label = "cw.Fonts.small — Labels & Descriptions" },
     { key = "header", label = "cw.Fonts.header — SECTION HEADERS" },
   }
-
   for _, pf in ipairs(previewFonts) do
     local fs = c:CreateFontString(nil, "OVERLAY")
     fs:SetFontObject(cw:GetFont(pf.key))
@@ -879,75 +1043,59 @@ pages.settings = function(parent)
     fs:SetTextColor(unpack(T.text))
     y = y - 22
   end
-
   y = y - 16
 
   -- UI Scale
   cw:CreateSectionHeader(c, "UI Scale", y)
   y = y - 22
 
-  local uiDesc = c:CreateFontString(nil, "OVERLAY")
-  uiDesc:SetFontObject(cw.Fonts.small)
-  uiDesc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  uiDesc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
-  uiDesc:SetJustifyH("LEFT")
-  uiDesc:SetWordWrap(true)
-  uiDesc:SetText("Scales the entire Cogworks showcase frame. Cogs can apply cw:GetSetting(\"uiScale\") to their own main frames.")
-  uiDesc:SetTextColor(unpack(T.textDim))
-  y = y - 36
-
   local uiValText = c:CreateFontString(nil, "OVERLAY")
   uiValText:SetFontObject(cw.Fonts.normal)
   uiValText:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
   uiValText:SetText("Current: " .. string.format("%.0f%%", cw:GetSetting("uiScale") * 100))
   uiValText:SetTextColor(unpack(T.text))
-
   y = y - 28
 
-  local uiScales = { 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4 }
   xOff = 8
-  for _, s in ipairs(uiScales) do
+  for _, s in ipairs(scales) do
     local label = string.format("%.0f%%", s * 100)
-    local btn = cw:CreateButton(c, label, 56, 24, function()
+    local btn = cw:CreateButton(c, label, 52, 24, function()
       cw:SetSetting("uiScale", s)
       uiValText:SetText("Current: " .. label)
       if showcase then showcase:SetScale(s) end
     end)
     btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
-    xOff = xOff + 62
+    xOff = xOff + 58
   end
-
   y = y - 40
 
-  -- Reset button
+  -- Reset
   cw:CreateSectionHeader(c, "Reset", y)
   y = y - 22
 
   local resetBtn = cw:CreateButton(c, "Reset All to Defaults", 180, 28, function()
     local defaults = cw:GetSettingDefaults()
-    for k, v in pairs(defaults) do
-      cw:SetSetting(k, v)
-    end
+    for k, v in pairs(defaults) do cw:SetSetting(k, v) end
     fontValText:SetText("Current: 100%")
     uiValText:SetText("Current: 100%")
+    familyLabel:SetText("Current: Friz Quadrata")
     if showcase then showcase:SetScale(1.0) end
     cw:Print("Cogworks", "Settings reset to defaults.")
   end)
   resetBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-
   y = y - 50
 
-  -- Widget demo at current font scale
-  cw:CreateSectionHeader(c, "Live Widget Preview (affected by font scale)", y)
+  -- Live preview
+  cw:CreateSectionHeader(c, "Live Widget Preview", y)
   y = y - 22
 
   local demoBtn = cw:CreateButton(c, "Sample Button", 140, 28, nil)
   demoBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
   y = y - 36
 
-  local demoCb = cw:CreateCheckbox(c, "Sample checkbox", "This description text scales with the font setting above.", false, nil)
+  local demoCb = cw:CreateCheckbox(c, "Sample checkbox", "Description text scales with font settings.", false, nil)
   demoCb:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  y = y - 56
+  y = y - 50
 
   local demoBar = cw:CreateProgressBar(c, 250, 18)
   demoBar:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)

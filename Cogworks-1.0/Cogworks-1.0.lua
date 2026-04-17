@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 3
+local MAJOR, MINOR = "Cogworks-1.0", 4
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -28,7 +28,7 @@ oldminor = oldminor or 0
 -- Version
 -- ============================================================================
 
-lib.version      = "0.3.0"   -- human-facing semver of the Cogworks suite
+lib.version      = "0.4.0"   -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -253,8 +253,16 @@ end
 -- lib.settings at startup. Changing a setting fires SettingsChanged.
 
 local SETTING_DEFAULTS = {
-  fontScale = 1.0,   -- 0.8 .. 1.4
-  uiScale   = 1.0,   -- 0.8 .. 1.4
+  fontScale  = 1.0,      -- 0.8 .. 1.4
+  uiScale    = 1.0,      -- 0.8 .. 1.4
+  fontFamily = "default", -- key into lib.FontFamilies
+}
+
+lib.FontFamilies = {
+  default  = { path = "Fonts\\FRIZQT__.TTF",  label = "Friz Quadrata" },
+  arial    = { path = "Fonts\\ARIALN.TTF",     label = "Arial Narrow" },
+  morpheus = { path = "Fonts\\MORPHEUS.TTF",   label = "Morpheus" },
+  skurri   = { path = "Fonts\\SKURRI.TTF",     label = "Skurri" },
 }
 
 lib.settings = lib.settings or {}
@@ -270,7 +278,7 @@ function lib:SetSetting(key, value)
   local old = self.settings[key]
   if old == value then return end
   self.settings[key] = value
-  if key == "fontScale" then self:UpdateFonts() end
+  if key == "fontScale" or key == "fontFamily" then self:UpdateFonts() end
   self:Fire(self.Events.SettingsChanged, key, value, old)
 end
 
@@ -318,14 +326,17 @@ end
 function lib:UpdateFonts()
   local scale = self.settings.fontScale or 1.0
   scale = math.max(0.8, math.min(1.4, scale))
+  local familyKey = self.settings.fontFamily or "default"
+  local family = self.FontFamilies[familyKey] or self.FontFamilies.default
+  local fontPath = family.path
   for key, def in pairs(FONT_DEFS) do
     local fo = ensureFontObject(key, def)
-    local path, _, flags = fo:GetFont()
-    if not path then
+    local _, _, flags = fo:GetFont()
+    if not flags then
       fo:CopyFontObject(def.base)
-      path, _, flags = fo:GetFont()
+      _, _, flags = fo:GetFont()
     end
-    fo:SetFont(path, math.floor(def.size * scale + 0.5), flags)
+    fo:SetFont(fontPath, math.floor(def.size * scale + 0.5), flags or "")
   end
 end
 
@@ -826,6 +837,548 @@ function lib:SetNavButtonActive(btn, isActive)
     btn.bg:SetColorTexture(1, 1, 1, 0)
     if btn.icon then btn.icon:SetDesaturated(true) end
   end
+end
+
+-- ============================================================================
+-- Scroll table
+-- ============================================================================
+-- A generic sortable, resizable data table. Define columns, call SetData(),
+-- done. Sorting, column drag-resize, row hover, scroll bar auto-hide, icon
+-- and tooltip support are all built in.
+--
+-- Usage:
+--   local tbl = cw:CreateScrollTable(parent, {
+--     { key="name", label="Name", width=150, sortable=true },
+--     { key="gold", label="Gold", width=80, align="RIGHT", format=function(v) ... end },
+--   })
+--   tbl:SetData(rows)
+--   tbl:SetOnRowClick(function(rowData, button, index) ... end)
+
+local ST_ROW_HEIGHT   = 20
+local ST_HEADER_HEIGHT = 22
+local ST_COL_PADDING   = 4
+
+local ScrollTableMixin = {}
+
+function ScrollTableMixin:Init(parent, columns)
+  self.columns = columns
+  self.data = {}
+  self.sortKey = nil
+  self.sortAsc = true
+  self.onRowClick = nil
+  self.rows = {}
+  self.headerButtons = {}
+  self.resizeHandles = {}
+  self.container = parent
+
+  self:BuildHeader(parent)
+  self:BuildScrollArea(parent)
+end
+
+function ScrollTableMixin:BuildHeader(parent)
+  local T = lib.Theme
+  self.headerFrame = CreateFrame("Frame", nil, parent)
+  self.headerFrame:SetHeight(ST_HEADER_HEIGHT)
+  self.headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+  self.headerFrame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+
+  local bg = self.headerFrame:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(unpack(T.header))
+
+  local border = self.headerFrame:CreateTexture(nil, "BORDER")
+  border:SetHeight(1)
+  border:SetPoint("BOTTOMLEFT"); border:SetPoint("BOTTOMRIGHT")
+  border:SetColorTexture(T.border[1], T.border[2], T.border[3], 1)
+
+  local xOff = 0
+  for i, col in ipairs(self.columns) do
+    local btn = CreateFrame("Button", nil, self.headerFrame)
+    btn:SetHeight(ST_HEADER_HEIGHT)
+    btn:SetWidth(col.width)
+    btn:SetPoint("LEFT", self.headerFrame, "LEFT", xOff, 0)
+    if i == #self.columns then btn:SetPoint("RIGHT", self.headerFrame, "RIGHT", 0, 0) end
+
+    btn.label = btn:CreateFontString(nil, "OVERLAY")
+    btn.label:SetFontObject(lib.Fonts.small)
+    btn.label:SetPoint("LEFT", btn, "LEFT", ST_COL_PADDING, 0)
+    btn.label:SetPoint("RIGHT", btn, "RIGHT", -ST_COL_PADDING, 0)
+    btn.label:SetJustifyH(col.align or "LEFT")
+    btn.label:SetText(col.label)
+    btn.label:SetTextColor(0.8, 0.8, 0.8)
+
+    btn.arrow = btn:CreateFontString(nil, "OVERLAY")
+    btn.arrow:SetFontObject(lib.Fonts.small)
+    btn.arrow:SetPoint("RIGHT", btn, "RIGHT", -2, 0)
+    btn.arrow:SetText("")
+
+    btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+    btn.highlight:SetAllPoints()
+    btn.highlight:SetColorTexture(1, 1, 1, 0.05)
+
+    if col.sortable ~= false then
+      local colKey = col.key
+      local tbl = self
+      btn:SetScript("OnClick", function()
+        if tbl.sortKey == colKey then
+          tbl.sortAsc = not tbl.sortAsc
+        else
+          tbl.sortKey = colKey
+          tbl.sortAsc = true
+        end
+        tbl:RefreshSort()
+        tbl:Render()
+      end)
+    end
+
+    self.headerButtons[i] = btn
+    xOff = xOff + col.width
+  end
+
+  -- Column resize handles
+  for _, h in ipairs(self.resizeHandles) do h:Hide() end
+  for i = 1, #self.columns - 1 do
+    local handle = self.resizeHandles[i]
+    if not handle then
+      handle = CreateFrame("Button", nil, self.headerFrame)
+      handle:SetWidth(6)
+      handle.tex = handle:CreateTexture(nil, "OVERLAY")
+      handle.tex:SetAllPoints()
+      handle.tex:SetColorTexture(0.4, 0.4, 0.5, 0)
+      self.resizeHandles[i] = handle
+    end
+    handle:SetHeight(ST_HEADER_HEIGHT)
+    handle:ClearAllPoints()
+    handle:SetPoint("LEFT", self.headerButtons[i], "RIGHT", -3, 0)
+    handle:SetFrameLevel(self.headerFrame:GetFrameLevel() + 2)
+    handle:Show()
+
+    handle:SetScript("OnEnter", function(h) h.tex:SetColorTexture(1, 0.82, 0, 0.4) end)
+    handle:SetScript("OnLeave", function(h)
+      if not h._dragging then h.tex:SetColorTexture(0.4, 0.4, 0.5, 0) end
+    end)
+
+    local colIdx = i
+    local tbl = self
+    handle:SetScript("OnMouseDown", function(h, button)
+      if button ~= "LeftButton" then return end
+      h._dragging = true
+      h._startX = GetCursorPosition() / UIParent:GetEffectiveScale()
+      h._startW1 = tbl.columns[colIdx].width
+      h._startW2 = tbl.columns[colIdx + 1].width
+      h.tex:SetColorTexture(1, 0.82, 0, 0.6)
+      h:SetScript("OnUpdate", function()
+        local curX = GetCursorPosition() / UIParent:GetEffectiveScale()
+        local delta = curX - h._startX
+        local nw1 = math.max(30, h._startW1 + delta)
+        local nw2 = math.max(30, h._startW2 - delta)
+        if nw1 >= 30 and nw2 >= 30 then
+          tbl.columns[colIdx].width = nw1
+          tbl.columns[colIdx + 1].width = nw2
+          local x = 0
+          for j, c in ipairs(tbl.columns) do
+            tbl.headerButtons[j]:ClearAllPoints()
+            tbl.headerButtons[j]:SetPoint("LEFT", tbl.headerFrame, "LEFT", x, 0)
+            if j == #tbl.columns then
+              tbl.headerButtons[j]:SetPoint("RIGHT", tbl.headerFrame, "RIGHT", 0, 0)
+            else
+              tbl.headerButtons[j]:SetWidth(c.width)
+            end
+            x = x + c.width
+          end
+          for j = 1, #tbl.columns - 1 do
+            if tbl.resizeHandles[j] then
+              tbl.resizeHandles[j]:ClearAllPoints()
+              tbl.resizeHandles[j]:SetPoint("LEFT", tbl.headerButtons[j], "RIGHT", -3, 0)
+            end
+          end
+        end
+      end)
+    end)
+    handle:SetScript("OnMouseUp", function(h)
+      h._dragging = false
+      h.tex:SetColorTexture(0.4, 0.4, 0.5, 0)
+      h:SetScript("OnUpdate", nil)
+      for _, row in ipairs(tbl.rows) do row:Hide(); row:SetParent(nil) end
+      wipe(tbl.rows)
+      tbl:Render()
+    end)
+  end
+end
+
+function ScrollTableMixin:BuildScrollArea(parent)
+  self.scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+  self.scrollFrame:SetPoint("TOPLEFT", self.headerFrame, "BOTTOMLEFT", 0, 0)
+  self.scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
+
+  self.content = CreateFrame("Frame", nil, self.scrollFrame)
+  self.content:SetWidth(self.scrollFrame:GetWidth())
+  self.content:SetHeight(1)
+  self.scrollFrame:SetScrollChild(self.content)
+
+  self.scrollBar = self.scrollFrame.ScrollBar
+  if not self.scrollBar then
+    for _, child in ipairs({self.scrollFrame:GetChildren()}) do
+      if child and child.GetObjectType and child:GetObjectType() == "Slider" then
+        self.scrollBar = child; break
+      end
+    end
+  end
+
+  self.scrollFrame:SetScript("OnSizeChanged", function(sf, w)
+    self.content:SetWidth(w)
+    self:UpdateScrollBarVisibility()
+  end)
+  self.scrollFrame:HookScript("OnScrollRangeChanged", function()
+    self:UpdateScrollBarVisibility()
+  end)
+end
+
+function ScrollTableMixin:UpdateScrollBarVisibility()
+  if not self.scrollBar then return end
+  local range = self.scrollFrame:GetVerticalScrollRange()
+  if range and range <= 0.5 then
+    self.scrollBar:SetAlpha(0); self.scrollBar:EnableMouse(false)
+  else
+    self.scrollBar:SetAlpha(1); self.scrollBar:EnableMouse(true)
+  end
+end
+
+function ScrollTableMixin:UpdateHeaderArrows()
+  for i, col in ipairs(self.columns) do
+    local btn = self.headerButtons[i]
+    if btn then
+      if col.key == self.sortKey then
+        btn.arrow:SetText(self.sortAsc and "  v" or "  ^")
+        btn.label:SetTextColor(1, 1, 1)
+      else
+        btn.arrow:SetText("")
+        btn.label:SetTextColor(0.8, 0.8, 0.8)
+      end
+    end
+  end
+end
+
+function ScrollTableMixin:RefreshSort()
+  if not self.sortKey then return end
+  local key = self.sortKey
+  local asc = self.sortAsc
+  local override = "_sort" .. key:sub(1,1):upper() .. key:sub(2)
+  table.sort(self.data, function(a, b)
+    local va = a[override] or a[key]
+    local vb = b[override] or b[key]
+    if va == nil then va = "" end
+    if vb == nil then vb = "" end
+    local na, nb = tonumber(va), tonumber(vb)
+    if na and nb then return asc and na < nb or (not asc and na > nb) end
+    va = tostring(va):lower()
+    vb = tostring(vb):lower()
+    return asc and va < vb or (not asc and va > vb)
+  end)
+end
+
+function ScrollTableMixin:GetOrCreateRow(index)
+  if self.rows[index] then return self.rows[index] end
+  local T = lib.Theme
+  local row = CreateFrame("Frame", nil, self.content)
+  row:SetHeight(ST_ROW_HEIGHT)
+  row:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -(index - 1) * ST_ROW_HEIGHT)
+  row:SetPoint("RIGHT", self.content, "RIGHT", 0, 0)
+  row:EnableMouse(true)
+
+  row.bg = row:CreateTexture(nil, "BACKGROUND")
+  row.bg:SetAllPoints()
+  row.bg:SetColorTexture(1, 1, 1, index % 2 == 0 and T.rowAlt[4] or 0)
+
+  row:SetScript("OnEnter", function(r)
+    r.bg:SetColorTexture(unpack(T.rowHover))
+    if row._onEnter then row._onEnter(row) end
+  end)
+  row:SetScript("OnLeave", function(r)
+    r.bg:SetColorTexture(1, 1, 1, index % 2 == 0 and T.rowAlt[4] or 0)
+    GameTooltip:Hide()
+  end)
+
+  row.cells = {}
+  row._cellClips = {}
+  local xOff = 0
+  for i, col in ipairs(self.columns) do
+    local clip = CreateFrame("Frame", nil, row)
+    clip:SetHeight(ST_ROW_HEIGHT)
+    clip:SetWidth(col.width)
+    clip:SetPoint("LEFT", row, "LEFT", xOff, 0)
+    if i == #self.columns then clip:SetPoint("RIGHT", row, "RIGHT", 0, 0) end
+    clip:SetClipsChildren(true)
+
+    local cell = clip:CreateFontString(nil, "OVERLAY")
+    cell:SetFontObject(lib.Fonts.small)
+    cell:SetHeight(ST_ROW_HEIGHT)
+    cell:SetPoint("LEFT", clip, "LEFT", ST_COL_PADDING, 0)
+    cell:SetPoint("RIGHT", clip, "RIGHT", -ST_COL_PADDING, 0)
+    cell:SetJustifyH(col.align or "LEFT")
+    cell:SetWordWrap(false)
+    row.cells[i] = cell
+    row._cellClips[i] = clip
+    xOff = xOff + col.width
+  end
+
+  row.icon = row._cellClips[1]:CreateTexture(nil, "ARTWORK")
+  row.icon:SetSize(ST_ROW_HEIGHT - 4, ST_ROW_HEIGHT - 4)
+  row.icon:SetPoint("LEFT", row._cellClips[1], "LEFT", 2, 0)
+  row.icon:Hide()
+
+  self.rows[index] = row
+  return row
+end
+
+function ScrollTableMixin:SetData(data)
+  self.data = data
+  if self.sortKey then self:RefreshSort() end
+  self:Render()
+end
+
+function ScrollTableMixin:Render()
+  local T = lib.Theme
+  self:UpdateHeaderArrows()
+  for _, row in ipairs(self.rows) do
+    row:Hide(); row._onEnter = nil; row:SetScript("OnMouseDown", nil)
+  end
+
+  for i, rowData in ipairs(self.data) do
+    local row = self:GetOrCreateRow(i)
+    for j, col in ipairs(self.columns) do
+      local v = rowData[col.key]
+      if col.format then v = col.format(v, rowData) end
+      row.cells[j]:SetText(v or "")
+    end
+
+    local defaultAlpha = i % 2 == 0 and T.rowAlt[4] or 0
+    if rowData._rowColor then
+      local c = rowData._rowColor
+      local ba = c[4] or 0.15
+      row.bg:SetColorTexture(c[1], c[2], c[3], ba)
+      row:SetScript("OnEnter", function(r)
+        r.bg:SetColorTexture(c[1], c[2], c[3], ba + 0.08)
+        if row._onEnter then row._onEnter(row) end
+      end)
+      row:SetScript("OnLeave", function(r)
+        r.bg:SetColorTexture(c[1], c[2], c[3], ba)
+        GameTooltip:Hide()
+      end)
+    else
+      row.bg:SetColorTexture(1, 1, 1, defaultAlpha)
+      row:SetScript("OnEnter", function(r)
+        r.bg:SetColorTexture(unpack(T.rowHover))
+        if row._onEnter then row._onEnter(row) end
+      end)
+      row:SetScript("OnLeave", function(r)
+        r.bg:SetColorTexture(1, 1, 1, defaultAlpha)
+        GameTooltip:Hide()
+      end)
+    end
+
+    -- Update clip widths for resized columns
+    local cx = 0
+    for j, col in ipairs(self.columns) do
+      if row._cellClips[j] then
+        row._cellClips[j]:SetWidth(col.width)
+        row._cellClips[j]:ClearAllPoints()
+        row._cellClips[j]:SetPoint("LEFT", row, "LEFT", cx, 0)
+        if j == #self.columns then
+          row._cellClips[j]:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        end
+      end
+      cx = cx + col.width
+    end
+
+    if rowData._icon then
+      row.icon:SetTexture(rowData._icon); row.icon:Show()
+      row.cells[1]:SetPoint("LEFT", row.icon, "RIGHT", 2, 0)
+    else
+      row.icon:Hide()
+      row.cells[1]:SetPoint("LEFT", row._cellClips[1], "LEFT", ST_COL_PADDING, 0)
+    end
+
+    if rowData._tooltipText then
+      row._onEnter = function()
+        GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+        GameTooltip:SetText(rowData._tooltipText, 1, 1, 1)
+        if rowData._tooltipExtra then
+          GameTooltip:AddLine(rowData._tooltipExtra, 0.7, 0.7, 0.7, true)
+        end
+        GameTooltip:Show()
+      end
+    end
+
+    if self.onRowClick then
+      local d, idx = rowData, i
+      row:SetScript("OnMouseDown", function(_, button)
+        self.onRowClick(d, button, idx)
+      end)
+    end
+
+    row:Show()
+  end
+
+  self.content:SetHeight(math.max(1, #self.data * ST_ROW_HEIGHT))
+  if self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
+  self:UpdateScrollBarVisibility()
+end
+
+function ScrollTableMixin:SetOnRowClick(fn) self.onRowClick = fn end
+function ScrollTableMixin:SetSort(key, asc)
+  self.sortKey = key; self.sortAsc = asc ~= false
+end
+function ScrollTableMixin:Show()
+  if self.headerFrame then self.headerFrame:Show() end
+  if self.scrollFrame then self.scrollFrame:Show() end
+end
+function ScrollTableMixin:Hide()
+  if self.headerFrame then self.headerFrame:Hide() end
+  if self.scrollFrame then self.scrollFrame:Hide() end
+end
+function ScrollTableMixin:GetRowHeight() return ST_ROW_HEIGHT end
+
+function lib:CreateScrollTable(parent, columns)
+  local tbl = setmetatable({}, { __index = ScrollTableMixin })
+  tbl:Init(parent, columns)
+  return tbl
+end
+
+-- ============================================================================
+-- Popup / dialog
+-- ============================================================================
+-- Modal popups with title, content area, and action buttons. Covers the common
+-- confirm/cancel pattern and arbitrary content dialogs.
+--
+-- Usage:
+--   local popup = cw:CreatePopup({ title = "Confirm", width = 350, height = 180 })
+--   -- popup.content is the interior frame for custom widgets
+--   popup:SetButtons({ { label = "OK", onClick = fn }, { label = "Cancel" } })
+--   popup:Show()
+--
+--   -- Shortcut for confirm dialogs:
+--   cw:ShowConfirmDialog("Delete item?", "This cannot be undone.", onYes, onNo)
+
+function lib:CreatePopup(opts)
+  opts = opts or {}
+  local T = self.Theme
+  local w = opts.width or 360
+  local h = opts.height or 200
+
+  local overlay = CreateFrame("Frame", nil, UIParent)
+  overlay:SetAllPoints()
+  overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+  overlay:EnableMouse(true)
+  overlay:Hide()
+
+  local dimBg = overlay:CreateTexture(nil, "BACKGROUND")
+  dimBg:SetAllPoints()
+  dimBg:SetColorTexture(0, 0, 0, 0.5)
+
+  local f = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+  f:SetSize(w, h)
+  f:SetPoint("CENTER")
+  f:SetBackdrop(self.Backdrop)
+  f:SetBackdropColor(unpack(T.bg))
+  f:SetBackdropBorderColor(unpack(T.border))
+  f:SetMovable(true)
+
+  -- Title bar
+  local titleBar = CreateFrame("Frame", nil, f)
+  titleBar:SetHeight(28)
+  titleBar:SetPoint("TOPLEFT"); titleBar:SetPoint("TOPRIGHT")
+  titleBar:EnableMouse(true)
+  titleBar:RegisterForDrag("LeftButton")
+  titleBar:SetScript("OnDragStart", function() f:StartMoving() end)
+  titleBar:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+
+  local titleBg = titleBar:CreateTexture(nil, "BACKGROUND")
+  titleBg:SetAllPoints()
+  titleBg:SetColorTexture(unpack(T.header))
+
+  local titleText = titleBar:CreateFontString(nil, "OVERLAY")
+  titleText:SetFontObject(self.Fonts.normal)
+  titleText:SetPoint("LEFT", titleBar, "LEFT", 10, 0)
+  titleText:SetText(opts.title or "")
+  titleText:SetTextColor(unpack(T.gold))
+
+  local closeBtn = self:CreateIconButton(titleBar,
+    "Interface\\Buttons\\UI-Panel-MinimizeButton-Up", 18, "Close",
+    function() overlay:Hide() end)
+  closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -4, 0)
+
+  -- Content area
+  f.content = CreateFrame("Frame", nil, f)
+  f.content:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 10, -8)
+  f.content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 40)
+
+  -- Button bar
+  f.buttonBar = CreateFrame("Frame", nil, f)
+  f.buttonBar:SetHeight(32)
+  f.buttonBar:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 10, 6)
+  f.buttonBar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 6)
+
+  f._buttons = {}
+  function f:SetButtons(btnDefs)
+    for _, b in ipairs(self._buttons) do b:Hide() end
+    wipe(self._buttons)
+    local xOff = 0
+    for i = #btnDefs, 1, -1 do
+      local def = btnDefs[i]
+      local btn = lib:CreateButton(self.buttonBar, def.label, def.width or 90, 26, function()
+        if def.onClick then def.onClick() end
+        if def.close ~= false then overlay:Hide() end
+      end)
+      btn:SetPoint("RIGHT", self.buttonBar, "RIGHT", -xOff, 0)
+      self._buttons[#self._buttons + 1] = btn
+      xOff = xOff + (def.width or 90) + 8
+    end
+  end
+
+  function f:SetTitle(text)
+    titleText:SetText(text or "")
+  end
+  function f:Show()
+    overlay:Show()
+  end
+  function f:Hide()
+    overlay:Hide()
+  end
+  function f:IsShown()
+    return overlay:IsShown()
+  end
+
+  overlay:SetScript("OnKeyDown", function(_, key)
+    if key == "ESCAPE" then overlay:Hide(); overlay:SetPropagateKeyboardInput(false)
+    else overlay:SetPropagateKeyboardInput(true) end
+  end)
+
+  if opts.buttons then f:SetButtons(opts.buttons) end
+  return f
+end
+
+function lib:ShowConfirmDialog(title, message, onConfirm, onCancel)
+  local popup = self:CreatePopup({
+    title = title, width = 380, height = 160,
+  })
+
+  local msg = popup.content:CreateFontString(nil, "OVERLAY")
+  msg:SetFontObject(self.Fonts.normal)
+  msg:SetAllPoints()
+  msg:SetJustifyH("LEFT"); msg:SetJustifyV("TOP")
+  msg:SetWordWrap(true)
+  msg:SetText(message or "")
+  msg:SetTextColor(unpack(self.Theme.text))
+
+  popup:SetButtons({
+    { label = "Confirm", onClick = onConfirm },
+    { label = "Cancel", onClick = onCancel },
+  })
+  popup:Show()
+  return popup
 end
 
 -- ============================================================================
