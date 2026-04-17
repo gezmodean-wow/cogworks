@@ -3,6 +3,7 @@
 ## Notes: The mainspring of the Cogworks suite — shared core for FlipQueue, Tempo, Maxcraft, and beyond.
 ## Author: Gezmodean
 ## Version: @project-version@
+## SavedVariables: CogworksDB
 ## X-Category: Library
 ## X-Website: https://github.com/gezmodean-wow/cogworks
 ## X-Curse-Project-ID: 1514607

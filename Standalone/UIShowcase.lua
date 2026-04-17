@@ -62,6 +62,7 @@ local function createShowcase()
   f:SetResizable(true)
   f:SetResizeBounds(520, 360, 1000, 700)
   f:SetClampedToScreen(true)
+  f:SetScale(cw:GetSetting("uiScale") or 1.0)
   tinsert(UISpecialFrames, "CogworksShowcase")
 
   -- Title bar
@@ -130,8 +131,10 @@ local function createShowcase()
 
   -- Build nav buttons
   local navDefs = {
+    { key = "gears",    label = "Gear Assembly", icon = "Interface\\Icons\\INV_Misc_Gear_01" },
+    { key = "settings", label = "Settings",    icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
-    { key = "controls", label = "Controls",    icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
+    { key = "controls", label = "Controls",    icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "nav",      label = "Navigation",  icon = "Interface\\Buttons\\UI-MicroButton-EJ-Up" },
     { key = "theme",    label = "Theme",       icon = "Interface\\Buttons\\UI-MicroButton-Collections-Up" },
     { key = "layout",   label = "Layout",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
@@ -731,13 +734,238 @@ pages.layout = function(parent)
 end
 
 -- ============================================================================
+-- Page: Gear Assembly
+-- ============================================================================
+
+pages.gears = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+  local scroll, c = createPageFrame(f)
+
+  local y = 0
+
+  cw:CreateSectionHeader(c, "Suite Gear Assembly", y)
+  y = y - 20
+
+  local desc = c:CreateFontString(nil, "OVERLAY")
+  desc:SetFontObject(cw.Fonts.small)
+  desc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  desc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
+  desc:SetJustifyH("LEFT")
+  desc:SetWordWrap(true)
+  desc:SetText("The gear assembly shows every cog in the suite. Installed cogs spin in brass; missing ones are grayed out (click for download link). Planned cogs show \"...\" — they're still being built. Embed this widget in any cog's About panel with cw:CreateGearAssembly(parent).")
+  desc:SetTextColor(unpack(T.textDim))
+  y = y - 50
+
+  -- Large assembly with labels
+  local assembly = cw:CreateGearAssembly(c, { showLabels = true })
+  assembly:SetPoint("TOP", c, "TOP", 0, y)
+  y = y - (assembly:GetHeight() + 20)
+
+  -- Compact assembly without labels
+  cw:CreateSectionHeader(c, "Compact (no labels, for corners)", y)
+  y = y - 20
+
+  local compact = cw:CreateGearAssembly(c, { showLabels = false })
+  compact:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - (compact:GetHeight() + 20)
+
+  -- Simulated states
+  cw:CreateSectionHeader(c, "Registry Info", y)
+  y = y - 22
+
+  local registered = cw:GetRegisteredAddons()
+  for _, name in ipairs(registered) do
+    local info = cw:GetAddon(name)
+    local line = c:CreateFontString(nil, "OVERLAY")
+    line:SetFontObject(cw.Fonts.normal)
+    line:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+    line:SetText("|cffd4a017" .. name .. "|r  v" .. (info.version or "?") .. "  |cff30d530installed|r")
+    y = y - 18
+  end
+
+  -- Show missing cogs
+  for _, entry in ipairs(cw.SuiteRoster) do
+    if not entry.central and not cw:GetAddon(entry.name) then
+      local line = c:CreateFontString(nil, "OVERLAY")
+      line:SetFontObject(cw.Fonts.normal)
+      line:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+      if entry.planned then
+        line:SetText("|cff888888" .. entry.name .. "|r  |cff8b5cf6planned|r")
+      else
+        line:SetText("|cffccaa00" .. entry.name .. "|r  |cffff4040not installed|r")
+      end
+      y = y - 18
+    end
+  end
+
+  y = y - 10
+  c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
+-- Page: Settings
+-- ============================================================================
+
+pages.settings = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+  local scroll, c = createPageFrame(f)
+
+  local y = 0
+
+  cw:CreateSectionHeader(c, "Font Scale", y)
+  y = y - 22
+
+  local fontDesc = c:CreateFontString(nil, "OVERLAY")
+  fontDesc:SetFontObject(cw.Fonts.small)
+  fontDesc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  fontDesc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
+  fontDesc:SetJustifyH("LEFT")
+  fontDesc:SetWordWrap(true)
+  fontDesc:SetText("Adjusts all Cogworks-built widget text. Cogs that use cw.Fonts will pick up the change automatically. Persisted in CogworksDB.")
+  fontDesc:SetTextColor(unpack(T.textDim))
+  y = y - 36
+
+  -- Current value display
+  local fontValText = c:CreateFontString(nil, "OVERLAY")
+  fontValText:SetFontObject(cw.Fonts.normal)
+  fontValText:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  fontValText:SetText("Current: " .. string.format("%.0f%%", cw:GetSetting("fontScale") * 100))
+  fontValText:SetTextColor(unpack(T.text))
+
+  y = y - 28
+
+  -- Font scale buttons
+  local scales = { 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4 }
+  local fontBtns = {}
+  local xOff = 8
+  for _, s in ipairs(scales) do
+    local label = string.format("%.0f%%", s * 100)
+    local btn = cw:CreateButton(c, label, 56, 24, function()
+      cw:SetSetting("fontScale", s)
+      fontValText:SetText("Current: " .. label)
+      for _, fb in ipairs(fontBtns) do
+        fb.text:SetTextColor(unpack(T.text))
+      end
+    end)
+    btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
+    if s == cw:GetSetting("fontScale") then
+      btn.text:SetTextColor(unpack(T.gold))
+    end
+    fontBtns[#fontBtns + 1] = btn
+    xOff = xOff + 62
+  end
+
+  y = y - 40
+
+  -- Font preview
+  cw:CreateSectionHeader(c, "Font Preview", y)
+  y = y - 22
+
+  local previewFonts = {
+    { key = "large",  label = "cw.Fonts.large — Page Titles" },
+    { key = "normal", label = "cw.Fonts.normal — Body Text" },
+    { key = "small",  label = "cw.Fonts.small — Labels & Descriptions" },
+    { key = "header", label = "cw.Fonts.header — SECTION HEADERS" },
+  }
+
+  for _, pf in ipairs(previewFonts) do
+    local fs = c:CreateFontString(nil, "OVERLAY")
+    fs:SetFontObject(cw:GetFont(pf.key))
+    fs:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+    fs:SetText(pf.label)
+    fs:SetTextColor(unpack(T.text))
+    y = y - 22
+  end
+
+  y = y - 16
+
+  -- UI Scale
+  cw:CreateSectionHeader(c, "UI Scale", y)
+  y = y - 22
+
+  local uiDesc = c:CreateFontString(nil, "OVERLAY")
+  uiDesc:SetFontObject(cw.Fonts.small)
+  uiDesc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  uiDesc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
+  uiDesc:SetJustifyH("LEFT")
+  uiDesc:SetWordWrap(true)
+  uiDesc:SetText("Scales the entire Cogworks showcase frame. Cogs can apply cw:GetSetting(\"uiScale\") to their own main frames.")
+  uiDesc:SetTextColor(unpack(T.textDim))
+  y = y - 36
+
+  local uiValText = c:CreateFontString(nil, "OVERLAY")
+  uiValText:SetFontObject(cw.Fonts.normal)
+  uiValText:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  uiValText:SetText("Current: " .. string.format("%.0f%%", cw:GetSetting("uiScale") * 100))
+  uiValText:SetTextColor(unpack(T.text))
+
+  y = y - 28
+
+  local uiScales = { 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4 }
+  xOff = 8
+  for _, s in ipairs(uiScales) do
+    local label = string.format("%.0f%%", s * 100)
+    local btn = cw:CreateButton(c, label, 56, 24, function()
+      cw:SetSetting("uiScale", s)
+      uiValText:SetText("Current: " .. label)
+      if showcase then showcase:SetScale(s) end
+    end)
+    btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
+    xOff = xOff + 62
+  end
+
+  y = y - 40
+
+  -- Reset button
+  cw:CreateSectionHeader(c, "Reset", y)
+  y = y - 22
+
+  local resetBtn = cw:CreateButton(c, "Reset All to Defaults", 180, 28, function()
+    local defaults = cw:GetSettingDefaults()
+    for k, v in pairs(defaults) do
+      cw:SetSetting(k, v)
+    end
+    fontValText:SetText("Current: 100%")
+    uiValText:SetText("Current: 100%")
+    if showcase then showcase:SetScale(1.0) end
+    cw:Print("Cogworks", "Settings reset to defaults.")
+  end)
+  resetBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+
+  y = y - 50
+
+  -- Widget demo at current font scale
+  cw:CreateSectionHeader(c, "Live Widget Preview (affected by font scale)", y)
+  y = y - 22
+
+  local demoBtn = cw:CreateButton(c, "Sample Button", 140, 28, nil)
+  demoBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - 36
+
+  local demoCb = cw:CreateCheckbox(c, "Sample checkbox", "This description text scales with the font setting above.", false, nil)
+  demoCb:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - 56
+
+  local demoBar = cw:CreateProgressBar(c, 250, 18)
+  demoBar:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  demoBar:SetProgress(7, 10)
+  y = y - 30
+
+  c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
 -- Public toggle
 -- ============================================================================
 
 function ns:ToggleShowcase()
   if not showcase then
     showcase = createShowcase()
-    showPage("buttons")
+    showPage("gears")
   end
 
   if showcase:IsShown() then

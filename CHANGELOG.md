@@ -2,6 +2,22 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.3.0] — Font scaling, settings, and gear assembly
+
+Bumps MINOR from `2` to `3`. Adds accessibility-focused customization and the suite gear assembly widget.
+
+### Added
+- **Settings system** — `lib.settings` with `GetSetting`, `SetSetting`, `ApplySettingsTable`, `GetSettingDefaults`. Fires `SettingsChanged` event when values change. Standalone addon persists settings in `CogworksDB`.
+- **Font scaling** — `lib.Fonts.normal`, `.small`, `.large`, `.header` — named FontObjects that respect `lib.settings.fontScale` (0.8x–1.4x). All widget factories now use these instead of hardcoded `GameFontNormal`, so every Cogworks-built widget scales together when the user adjusts font size.
+- **`lib:UpdateFonts()`** — rebuilds all FontObjects at the current scale. Called automatically when `fontScale` changes.
+- **`lib:GetFont(key)`** — returns a FontObject by key (`"normal"`, `"small"`, `"large"`, `"header"`).
+- **UI scale setting** — `lib.settings.uiScale` for cogs to apply via `frame:SetScale()`.
+- **Suite roster** — `lib.SuiteRoster` lists all known cogs (FlipQueue, Tempo, Maxcraft, Ledger) with role, icon, and URL metadata. Used by the gear assembly to show installed vs. missing members.
+- **`lib:CreateGearAssembly(parent, opts)`** — compact widget showing every cog as a connected gear. Installed cogs spin in brass with circular-masked icons; missing cogs are grayed out with "?" overlay and click-for-link; planned cogs show "..." in arcane purple. Auto-refreshes when cogs register. Options: `showLabels` (default true).
+- **Showcase: Gear Assembly page** — default landing page showing full and compact assembly variants plus registry info.
+- **Showcase: Settings page** — font scale buttons (80%–140%) with live preview, UI scale controls, reset-to-defaults, and live widget demo.
+- **`CogworksDB` SavedVariables** — standalone addon persists non-default settings across sessions.
+
 ## [0.2.0] — UI widget factories
 
 Bumps MINOR from `1` to `2`. Adds shared UI primitives so cogs can stop duplicating the same themed widget code.

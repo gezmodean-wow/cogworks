@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 2
+local MAJOR, MINOR = "Cogworks-1.0", 3
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -28,7 +28,7 @@ oldminor = oldminor or 0
 -- Version
 -- ============================================================================
 
-lib.version      = "0.2.0"   -- human-facing semver of the Cogworks suite
+lib.version      = "0.3.0"   -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -64,6 +64,9 @@ lib.Events = lib.Events or {
   CraftCompleted   = "CraftCompleted",   -- (recipeID, charKey)
   ResetDue         = "ResetDue",         -- (period)  -- "daily" / "weekly" / ...
   PriceUpdated     = "PriceUpdated",     -- (itemKey, source, price)
+
+  -- Settings
+  SettingsChanged  = "SettingsChanged",  -- (key, value, oldValue)
 }
 
 if not lib.callbacks then
@@ -243,6 +246,374 @@ function lib:HasSyndicator()
 end
 
 -- ============================================================================
+-- Settings
+-- ============================================================================
+-- Suite-wide settings with defaults. The standalone addon persists these in
+-- CogworksDB; embedded copies use whatever the host cog loads into
+-- lib.settings at startup. Changing a setting fires SettingsChanged.
+
+local SETTING_DEFAULTS = {
+  fontScale = 1.0,   -- 0.8 .. 1.4
+  uiScale   = 1.0,   -- 0.8 .. 1.4
+}
+
+lib.settings = lib.settings or {}
+for k, v in pairs(SETTING_DEFAULTS) do
+  if lib.settings[k] == nil then lib.settings[k] = v end
+end
+
+function lib:GetSetting(key)
+  return self.settings[key]
+end
+
+function lib:SetSetting(key, value)
+  local old = self.settings[key]
+  if old == value then return end
+  self.settings[key] = value
+  if key == "fontScale" then self:UpdateFonts() end
+  self:Fire(self.Events.SettingsChanged, key, value, old)
+end
+
+function lib:ApplySettingsTable(tbl)
+  if not tbl then return end
+  for k, v in pairs(tbl) do
+    if SETTING_DEFAULTS[k] ~= nil then
+      self.settings[k] = v
+    end
+  end
+  self:UpdateFonts()
+end
+
+function lib:GetSettingDefaults()
+  local copy = {}
+  for k, v in pairs(SETTING_DEFAULTS) do copy[k] = v end
+  return copy
+end
+
+-- ============================================================================
+-- Font system
+-- ============================================================================
+-- Named FontObjects that respect lib.settings.fontScale. Widget factories use
+-- these instead of hardcoded "GameFontNormal" so every Cogworks-built widget
+-- scales together when the user adjusts font size.
+
+local FONT_DEFS = {
+  normal = { base = "GameFontNormal",      size = 12 },
+  small  = { base = "GameFontNormalSmall",  size = 10 },
+  large  = { base = "GameFontNormalLarge",  size = 16 },
+  header = { base = "GameFontNormalSmall",  size = 10 },
+}
+
+lib.Fonts = lib.Fonts or {}
+
+local function ensureFontObject(key, def)
+  local name = "CogworksFont_" .. key
+  if not lib.Fonts[key] then
+    lib.Fonts[key] = CreateFont(name)
+    lib.Fonts[key]:CopyFontObject(def.base)
+  end
+  return lib.Fonts[key]
+end
+
+function lib:UpdateFonts()
+  local scale = self.settings.fontScale or 1.0
+  scale = math.max(0.8, math.min(1.4, scale))
+  for key, def in pairs(FONT_DEFS) do
+    local fo = ensureFontObject(key, def)
+    local path, _, flags = fo:GetFont()
+    if not path then
+      fo:CopyFontObject(def.base)
+      path, _, flags = fo:GetFont()
+    end
+    fo:SetFont(path, math.floor(def.size * scale + 0.5), flags)
+  end
+end
+
+function lib:GetFont(key)
+  if not self.Fonts[key] then
+    local def = FONT_DEFS[key]
+    if def then ensureFontObject(key, def) end
+  end
+  return self.Fonts[key]
+end
+
+lib:UpdateFonts()
+
+-- ============================================================================
+-- Suite roster
+-- ============================================================================
+-- The canonical list of all cogs (released and planned). Used by the gear
+-- assembly widget to show installed vs. missing members regardless of which
+-- cogs are loaded in the current session.
+
+lib.SuiteRoster = {
+  {
+    name    = "Cogworks",
+    role    = "Shared core library",
+    icon    = "Interface\\Icons\\INV_Misc_Gear_01",
+    central = true,
+  },
+  {
+    name    = "FlipQueue",
+    role    = "Auction flipping workflow",
+    icon    = "Interface\\AddOns\\flipqueue\\Art\\flipqueue-icon",
+    url     = "https://www.curseforge.com/wow/addons/flipqueue",
+  },
+  {
+    name    = "Tempo",
+    role    = "Reset & task tracking",
+    icon    = "Interface\\AddOns\\tempo\\Art\\tempo-icon",
+    url     = "https://www.curseforge.com/wow/addons/tempo",
+  },
+  {
+    name    = "Maxcraft",
+    role    = "Profession optimization",
+    icon    = "Interface\\AddOns\\maxcraft\\Art\\maxcraft-icon",
+    url     = "https://www.curseforge.com/wow/addons/maxcraft",
+  },
+  {
+    name    = "Ledger",
+    role    = "Net worth & sales evaluation",
+    icon    = "Interface\\Icons\\INV_Scroll_02",
+    planned = true,
+  },
+}
+
+-- ============================================================================
+-- Gear assembly widget
+-- ============================================================================
+-- A compact visual showing every cog in the suite as connected gears.
+-- Installed cogs glow brass and spin slowly; missing ones are grayed out with
+-- a "?" overlay; planned ones are outlined. Click a missing gear to see where
+-- to get it. Embed via cw:CreateGearAssembly(parent).
+
+local GEAR_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_Gear_01"
+local GEAR_SIZE_CENTER = 48
+local GEAR_SIZE_COG    = 36
+local GEAR_SPACING     = 6
+
+function lib:CreateGearAssembly(parent, opts)
+  opts = opts or {}
+  local T = self.Theme
+  local roster = self.SuiteRoster
+  local showLabels = opts.showLabels ~= false
+
+  local f = CreateFrame("Frame", nil, parent)
+
+  local gears = {}
+  local centerGear
+
+  local function createGear(entry, size)
+    local g = CreateFrame("Button", nil, f)
+    g:SetSize(size, size)
+
+    -- background ring
+    g.ring = g:CreateTexture(nil, "BACKGROUND")
+    g.ring:SetSize(size + 4, size + 4)
+    g.ring:SetPoint("CENTER")
+    g.ring:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.6)
+
+    -- mask the ring to a circle
+    g.ringMask = g:CreateMaskTexture()
+    g.ringMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    g.ringMask:SetSize(size + 4, size + 4)
+    g.ringMask:SetPoint("CENTER")
+    g.ring:AddMaskTexture(g.ringMask)
+
+    -- icon
+    g.icon = g:CreateTexture(nil, "ARTWORK")
+    g.icon:SetSize(size - 4, size - 4)
+    g.icon:SetPoint("CENTER")
+
+    -- circular mask for icon
+    g.iconMask = g:CreateMaskTexture()
+    g.iconMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    g.iconMask:SetSize(size - 4, size - 4)
+    g.iconMask:SetPoint("CENTER")
+    g.icon:AddMaskTexture(g.iconMask)
+
+    -- overlay for missing "?"
+    g.missing = g:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    g.missing:SetPoint("CENTER", g, "CENTER", 0, 0)
+    g.missing:SetText("?")
+    g.missing:SetTextColor(T.textDim[1], T.textDim[2], T.textDim[3])
+    g.missing:Hide()
+
+    -- label below
+    if showLabels then
+      g.label = g:CreateFontString(nil, "OVERLAY")
+      g.label:SetFontObject(lib.Fonts.small)
+      g.label:SetPoint("TOP", g, "BOTTOM", 0, -2)
+      g.label:SetText(entry.name)
+    end
+
+    -- rotation animation
+    g.spinGroup = g.icon:CreateAnimationGroup()
+    local spin = g.spinGroup:CreateAnimation("Rotation")
+    spin:SetDegrees(-360)
+    spin:SetDuration(entry.central and 20 or 12)
+    g.spinGroup:SetLooping("REPEAT")
+
+    g.entry = entry
+    return g
+  end
+
+  local function applyState(g)
+    local entry = g.entry
+    local installed = lib.addons[entry.name] ~= nil
+    local planned = entry.planned
+
+    if installed or entry.central then
+      -- use the addon's registered icon if available, fallback to roster icon
+      local addonInfo = lib.addons[entry.name]
+      local iconPath = (addonInfo and addonInfo.icon) or entry.icon or GEAR_ICON_FALLBACK
+      g.icon:SetTexture(iconPath)
+      g.icon:SetDesaturated(false)
+      g.icon:SetVertexColor(1, 1, 1)
+      g.ring:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.6)
+      g.missing:Hide()
+      g.spinGroup:Play()
+      if g.label then g.label:SetTextColor(unpack(T.text)) end
+    elseif planned then
+      g.icon:SetTexture(entry.icon or GEAR_ICON_FALLBACK)
+      g.icon:SetDesaturated(true)
+      g.icon:SetVertexColor(0.3, 0.3, 0.35)
+      g.ring:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.3)
+      g.missing:SetText("...")
+      g.missing:Show()
+      g.spinGroup:Stop()
+      if g.label then g.label:SetTextColor(unpack(T.textDisabled)) end
+    else
+      g.icon:SetTexture(entry.icon or GEAR_ICON_FALLBACK)
+      g.icon:SetDesaturated(true)
+      g.icon:SetVertexColor(0.4, 0.4, 0.45)
+      g.ring:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.4)
+      g.missing:SetText("?")
+      g.missing:Show()
+      g.spinGroup:Stop()
+      if g.label then g.label:SetTextColor(unpack(T.textDim)) end
+    end
+
+    -- Tooltip
+    g:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      if installed or entry.central then
+        local info = lib.addons[entry.name]
+        local ver = info and info.version or lib.version
+        GameTooltip:AddLine(entry.name, T.gold[1], T.gold[2], T.gold[3])
+        GameTooltip:AddLine(entry.role, T.textDim[1], T.textDim[2], T.textDim[3])
+        GameTooltip:AddLine("v" .. ver .. " |cff30d530installed|r", T.text[1], T.text[2], T.text[3])
+      elseif planned then
+        GameTooltip:AddLine(entry.name, T.textDim[1], T.textDim[2], T.textDim[3])
+        GameTooltip:AddLine(entry.role, T.textDim[1], T.textDim[2], T.textDim[3])
+        GameTooltip:AddLine("Coming soon", T.arcane[1], T.arcane[2], T.arcane[3])
+      else
+        GameTooltip:AddLine(entry.name, T.warning[1], T.warning[2], T.warning[3])
+        GameTooltip:AddLine(entry.role, T.textDim[1], T.textDim[2], T.textDim[3])
+        GameTooltip:AddLine("Not installed — click for info", T.gold[1], T.gold[2], T.gold[3])
+      end
+      GameTooltip:Show()
+    end)
+    g:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Click handler for missing cogs
+    g:SetScript("OnClick", function()
+      if not installed and not entry.central and entry.url then
+        lib:Print("Cogworks", "Get " .. entry.name .. ": " .. entry.url)
+      end
+    end)
+  end
+
+  -- Build gears: center + surrounding cogs
+  local surrounding = {}
+  for _, entry in ipairs(roster) do
+    if entry.central then
+      centerGear = createGear(entry, GEAR_SIZE_CENTER)
+    else
+      surrounding[#surrounding + 1] = createGear(entry, GEAR_SIZE_COG)
+    end
+  end
+
+  -- Layout: center gear, surrounding arranged in a row on either side
+  -- [cog1] [cog2] [CENTER] [cog3] [cog4]
+  local labelHeight = showLabels and 14 or 0
+  local totalHeight = GEAR_SIZE_CENTER + labelHeight + 4
+  local halfCount = math.ceil(#surrounding / 2)
+
+  if centerGear then
+    centerGear:SetPoint("CENTER", f, "CENTER", 0, labelHeight / 2)
+  end
+
+  local leftX = -(GEAR_SIZE_CENTER / 2 + GEAR_SPACING)
+  local rightX = (GEAR_SIZE_CENTER / 2 + GEAR_SPACING)
+  local centerY = labelHeight / 2
+
+  for i, g in ipairs(surrounding) do
+    if i <= halfCount then
+      -- left side, right-to-left
+      local offset = (halfCount - i) * (GEAR_SIZE_COG + GEAR_SPACING)
+      g:SetPoint("RIGHT", f, "CENTER", leftX - offset, centerY)
+    else
+      -- right side, left-to-right
+      local offset = (i - halfCount - 1) * (GEAR_SIZE_COG + GEAR_SPACING)
+      g:SetPoint("LEFT", f, "CENTER", rightX + offset, centerY)
+    end
+    gears[#gears + 1] = g
+  end
+  if centerGear then gears[#gears + 1] = centerGear end
+
+  -- Connecting bars between adjacent gears
+  f.connectors = f.connectors or {}
+  local allPositioned = {}
+  for i = 1, halfCount do allPositioned[#allPositioned + 1] = surrounding[i] end
+  allPositioned[#allPositioned + 1] = centerGear
+  for i = halfCount + 1, #surrounding do allPositioned[#allPositioned + 1] = surrounding[i] end
+
+  -- connectors drawn after layout settles (OnShow)
+  local function drawConnectors()
+    for _, c in ipairs(f.connectors) do c:Hide() end
+    local ci = 1
+    for i = 1, #allPositioned - 1 do
+      local conn = f.connectors[ci]
+      if not conn then
+        conn = f:CreateTexture(nil, "BACKGROUND", nil, -1)
+        f.connectors[ci] = conn
+      end
+      conn:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.25)
+      conn:SetHeight(2)
+      conn:SetPoint("LEFT", allPositioned[i], "RIGHT", -2, 0)
+      conn:SetPoint("RIGHT", allPositioned[i + 1], "LEFT", 2, 0)
+      conn:Show()
+      ci = ci + 1
+    end
+  end
+
+  -- Calculate total width
+  local totalWidth = GEAR_SIZE_CENTER + GEAR_SPACING * 2
+    + #surrounding * GEAR_SIZE_COG
+    + math.max(0, #surrounding - 1) * GEAR_SPACING
+  f:SetSize(totalWidth + 16, totalHeight)
+
+  -- Apply states and connectors
+  for _, g in ipairs(gears) do applyState(g) end
+  f:SetScript("OnShow", drawConnectors)
+  f.gears = gears
+
+  function f:Refresh()
+    for _, g in ipairs(gears) do applyState(g) end
+    drawConnectors()
+  end
+
+  -- Refresh when a new addon registers
+  local owner = {}
+  lib.RegisterCallback(owner, lib.Events.AddonRegistered, function()
+    if f:IsShown() then f:Refresh() end
+  end)
+
+  return f
+end
+
+-- ============================================================================
 -- UI widget factories
 -- ============================================================================
 -- Themed widget constructors that every cog can use instead of duplicating
@@ -257,7 +628,8 @@ function lib:CreateButton(parent, label, width, height, onClick)
   btn:SetBackdropColor(0.15, 0.15, 0.2, 1)
   btn:SetBackdropBorderColor(unpack(T.border))
 
-  btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  btn.text = btn:CreateFontString(nil, "OVERLAY")
+  btn.text:SetFontObject(self.Fonts.normal)
   btn.text:SetPoint("CENTER")
   btn.text:SetText(label or "")
 
@@ -285,13 +657,13 @@ function lib:CreateCheckbox(parent, label, description, initialValue, onChange)
   local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
   cb:SetSize(26, 26)
 
-  cb.label = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  cb.label = cb:CreateFontString(nil, "OVERLAY")
+  cb.label:SetFontObject(self.Fonts.normal)
   cb.label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
   cb.label:SetText(label or "")
   cb.label:SetTextColor(unpack(T.text))
 
   if description and description ~= "" then
-    cb.description = cb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     cb.description:SetPoint("TOPLEFT", cb.label, "BOTTOMLEFT", 0, -2)
     cb.description:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
     cb.description:SetJustifyH("LEFT")
@@ -336,7 +708,8 @@ end
 
 function lib:CreateSectionHeader(parent, text, yOffset)
   local T = self.Theme
-  local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  local h = parent:CreateFontString(nil, "OVERLAY")
+  h:SetFontObject(self.Fonts.header)
   h:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, yOffset or 0)
   h:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
   h:SetJustifyH("LEFT")
@@ -364,7 +737,8 @@ function lib:CreateProgressBar(parent, width, height)
   bar.fill:SetColorTexture(unpack(T.success))
   bar.fill:SetWidth(0.001)
 
-  bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  bar.text = bar:CreateFontString(nil, "OVERLAY")
+  bar.text:SetFontObject(self.Fonts.small)
   bar.text:SetPoint("CENTER")
   bar.text:SetTextColor(1, 1, 1, 1)
   bar.text:SetText("")
@@ -413,13 +787,15 @@ function lib:CreateNavButton(parent, navItem, onClick)
     btn.icon:SetDesaturated(true)
   end
 
-  btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  btn.label = btn:CreateFontString(nil, "OVERLAY")
+  btn.label:SetFontObject(self.Fonts.normal)
   btn.label:SetPoint("LEFT", btn, "LEFT", navItem.icon and 34 or 12, 0)
   btn.label:SetText(navItem.label or "")
   btn.label:SetTextColor(unpack(T.textDim))
 
   if navItem.badge then
-    btn.badge = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.badge = btn:CreateFontString(nil, "OVERLAY")
+    btn.badge:SetFontObject(self.Fonts.small)
     btn.badge:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
     btn.badge:SetTextColor(unpack(T.textDim))
   end

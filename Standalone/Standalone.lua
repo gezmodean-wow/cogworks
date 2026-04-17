@@ -2,17 +2,45 @@
 -- The standalone "Cogworks" addon shell. NOT embedded into sibling cogs —
 -- this file lives only in the standalone cogworks addon, not in Cogworks-1.0/.
 --
--- Provides the /cogworks slash command and a Ready-time banner so a developer
--- can verify the library loaded correctly when cogworks is installed as a
--- normal addon.
+-- Provides the /cogworks slash command, CogworksDB persistence for suite-wide
+-- settings, and a Ready-time banner.
 
 local addonName, ns = ...
 local cw = LibStub("Cogworks-1.0")
 
 cw:RegisterAddon("Cogworks", {
   version = cw.version,
-  prefix  = "|cffd4a017[Cogworks]|r ",  -- brass clockwork color
+  prefix  = "|cffd4a017[Cogworks]|r ",
+  icon    = "Interface\\Icons\\INV_Misc_Gear_01",
 })
+
+-- ============================================================================
+-- Settings persistence (CogworksDB)
+-- ============================================================================
+
+local settingsFrame = CreateFrame("Frame")
+settingsFrame:RegisterEvent("ADDON_LOADED")
+settingsFrame:RegisterEvent("PLAYER_LOGOUT")
+settingsFrame:SetScript("OnEvent", function(_, event, arg1)
+  if event == "ADDON_LOADED" and arg1 == addonName then
+    CogworksDB = CogworksDB or {}
+    CogworksDB.settings = CogworksDB.settings or {}
+    cw:ApplySettingsTable(CogworksDB.settings)
+  elseif event == "PLAYER_LOGOUT" then
+    CogworksDB = CogworksDB or {}
+    CogworksDB.settings = {}
+    local defaults = cw:GetSettingDefaults()
+    for k, v in pairs(cw.settings) do
+      if v ~= defaults[k] then
+        CogworksDB.settings[k] = v
+      end
+    end
+  end
+end)
+
+-- ============================================================================
+-- Slash command
+-- ============================================================================
 
 local function CmdMain(msg)
   msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
@@ -22,6 +50,12 @@ local function CmdMain(msg)
     local addons = cw:GetRegisteredAddons()
     cw:Print("Cogworks", "Registered cogs: " .. (#addons > 0 and table.concat(addons, ", ") or "(none)"))
     cw:Print("Cogworks", "Syndicator: " .. (cw:HasSyndicator() and "|cff30d530present|r" or "|cff888888not detected|r"))
+    cw:Print("Cogworks", "Font scale: " .. cw:GetSetting("fontScale") .. "  UI scale: " .. cw:GetSetting("uiScale"))
+    return
+  end
+
+  if msg == "ui" then
+    ns:ToggleShowcase()
     return
   end
 
@@ -48,11 +82,6 @@ local function CmdMain(msg)
     else
       cw:PrintError("Cogworks", "Unknown event: " .. event .. ". Try /cogworks events.")
     end
-    return
-  end
-
-  if msg == "ui" then
-    ns:ToggleShowcase()
     return
   end
 
