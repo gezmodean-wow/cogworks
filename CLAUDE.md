@@ -55,6 +55,29 @@ cogworks/
 └── LICENSE
 ```
 
+## Feedback tracking
+
+Player feedback (from the Chronoforge Discord), bug reports, and internal observations are tracked as `.md` files in per-cog `feedback/` directories. Cogworks-library-level issues live in `C:/src/cogworks/feedback/`; per-cog issues live in each cog's own `feedback/`. Schema, lifecycle, and ID format are documented in `~/.chronoforge/CONVENTIONS.md`. Cog → path → idPrefix mapping lives in `~/.chronoforge/config.json`.
+
+Structure per repo:
+
+```
+feedback/
+├── _TEMPLATE.md
+├── collection/   # phase 1 — still gathering info
+├── releases/     # phase 2 — scoped to a target version
+│   └── v<X.Y.Z>/
+└── archive/      # shipped, wontfix, duplicate
+```
+
+Slash commands (user-scoped, available from any session): `/feedback-scan`, `/feedback-ingest`, `/feedback-capture`, `/feedback-refresh`, `/feedback-promote`, `/feedback-status`, `/feedback-note`, `/cog-init`.
+
+### Proactive capture
+
+When the user mentions a bug, regression, feature idea, or improvement during normal work, offer to log it via `/feedback-capture` — search for related existing entries first, then augment or create. Don't write a feedback file unprompted; ask first. Similarly, when shipping a fix or trying an approach to resolve a tracked issue, offer to append to its Attempts log via `/feedback-note`.
+
+Commit messages referencing a tracked issue should use `<type>(<ID>): <subject>` — e.g. `fix(COG-004): guard RegisterAddon against nil namespace`.
+
 ## When adding new library features
 
 1. **Bump `MINOR`** in `Cogworks-1.0.lua` before adding the feature.
