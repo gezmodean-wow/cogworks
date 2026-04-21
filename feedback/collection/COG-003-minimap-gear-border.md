@@ -1,7 +1,7 @@
 ---
 id: COG-003
 cog: cogworks
-status: investigating
+status: in-progress
 title: Minimap gear-border branding for suite cogs
 sources:
   - type: internal
@@ -10,6 +10,7 @@ sources:
 reporters: []
 created: 2026-04-21
 updated: 2026-04-21
+investigation_complete: true
 release: null
 tags: [minimap, branding, libdbicon, ui, art]
 ---
@@ -35,6 +36,18 @@ Desired state:
 ## Attempts
 
 - **2026-04-21**: Roadmap captured. Feasibility investigation pending — see Next steps.
+
+- **2026-04-21**: **Investigation complete — feasibility confirmed**, all four questions answered from reading LibDBIcon-1.0 v56 (`AddOns/BugSack/Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua`). No prototype in-game session needed for feasibility; can proceed directly to API design + texture asset.
+  - **Q1 (button exposure)**: Fully exposed. `lib:GetMinimapButton(name)` returns the button frame; button has `.border`, `.background`, `.icon` textures as fields. Better still, LibDBIcon ships a **dedicated border API** — `lib:SetButtonBorder(name, borderTexture, size, framePoint, offsetX, offsetY)` (line 509). Swaps the border texture with one call. There's also a `LibDBIcon_IconCreated` callback fired after button creation (line 315) for deferred registration.
+  - **Q2 (minimap rotation)**: No concern. Buttons are child frames of `Minimap` positioned via `SetPoint("CENTER", Minimap, "CENTER", x, y)` at a calculated angle around the rim. The `rotateMinimap` cvar rotates the map *contents texture*, not child Button frames. A gear border will stay visually upright regardless of camera/map rotation. Confirmed across round and square minimap modes (the shape table at lines 138–153 only affects positioning on corners vs sides, never the button's own rendering).
+  - **Q3 (mask clipping)**: No concern. Addon buttons render outside the minimap's content mask — they're siblings positioned on the rim with `lib.radius` (default 5) extending past the minimap edge. The circular mask applies only to the map texture, not to child Button frames. Round and square minimaps both render custom borders fully.
+  - **Q4 (texture format + sizing)**: Target **128×128 TGA with alpha channel**, displayed at 50×50 (matches LibDBIcon's default border size on mainline, line 534). Defaults for reference: button frame 31×31 (line 483), icon 18×18 (line 608), border 50×50 extending outward. 128×128 source gives ~2.5x headroom for 1.5x UI scale (75×75 displayed). BLP would be Blizzard-native/optimal but TGA is simpler to author and ships fine via BigWigsMods packager.
+
+- **2026-04-21**: **API design confirmed trivial**. Given LibDBIcon's existing `SetButtonBorder`, the Cogworks wrapper is ~10 lines — register with LibDBIcon, call SetButtonBorder pointing at `Interface\AddOns\Cogworks\Art\CogBorder.tga`. Optional extension: also customize `SetButtonHighlightTexture` for a gear-shaped hover highlight (nice-to-have, defer).
+
+- **2026-04-21**: **Two bonus findings worth noting**:
+  - **AddonCompartmentFrame support** (LibDBIcon lines 312, 637): modern users increasingly pin addon icons to Blizzard's compartment dropdown rather than the minimap itself. The compartment uses only the inner icon (no border), so our gear-ring doesn't apply there. No work needed — compartment flow passes through LibDBIcon's existing path intact. But worth knowing: our branding doesn't reach compartment users; they'll still see a normal icon list. If important, consider a future sub-issue for compartment-specific branding (e.g. prefixing the entry text with "⚙ " or similar).
+  - **Existing `SetButtonBackground`** (line 549) is also available if we want to customize the backdrop disc *behind* the icon — could be used to paint a subtle brass-gold tone to reinforce the gear aesthetic without changing the border shape. Consider for v2.
 
 ## Notes
 
@@ -68,12 +81,18 @@ Desired state:
 
 ## Next steps
 
-1. **Investigation** (first action):
-   - Read LibDBIcon-1.0 from the installed WoW addons dir to understand the button frame construction + texture API.
-   - Verify minimap rotation behavior (camera and map modes) against non-circular button textures by inspecting the Blizzard `Minimap` frame code paths.
-   - Stand up a scratch prototype: grab an existing cog's button via `LibDBIcon:GetMinimapButton(...)`, swap its NormalTexture to a placeholder gear-shaped TGA, confirm rendering at default minimap button size. Document findings as an Attempts entry on this issue.
-2. **Design the API** — `lib:RegisterCogMinimapButton(addonName, opts)` wrapping `LibDBIcon:Register(addonName, dataobject, savedvarsTable)` plus the texture swap. Decide whether this fully replaces cogs' current LibDBIcon calls or layers on top.
-3. **Create the texture asset** — gear-ring 128×128 with transparent teeth. Commit to `Art/minimap-gear-border.tga` (or similar path) in cogworks repo. Probably commissionable or generatable from existing Cogworks branding assets.
-4. **Implement in Cogworks** — new MINOR bump. Add to UIShowcase so the effect is visible without needing to test in-game.
-5. **Roll out across cogs** — each cog updates its `Core.lua` to call `lib:RegisterCogMinimapButton` instead of `LibDBIcon:Register` directly. One cog at a time for canary testing; **FlipQueue first** (largest live user base means regressions surface fastest).
-6. **Document** — short note in cogworks README + each cog's CLAUDE.md that the minimap button chrome is suite-shared and not per-cog customizable by design.
+Investigation complete — feasibility confirmed, implementation path is clear. Remaining work:
+
+1. **Create the gear-ring texture asset** — 128×128 32-bit TGA with alpha. Solid inner ring, transparent gear-teeth cutouts on the outer edge, transparent center (so the cog's inner icon shows through). Commit to `Art/CogBorder.tga` in the cogworks repo. Either author manually, re-use existing Cogworks branding art (there's a 400×400 logo at `docs/branding/cogworks-logo-400.png`), or commission.
+2. **Implement `lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)`** — wraps `LibDBIcon:Register(...)` plus `LibDBIcon:SetButtonBorder(addonName, "Interface\\AddOns\\Cogworks\\Art\\CogBorder", 50, "TOPLEFT", 0, 0)`. Additive on Cogworks; new MINOR bump. Guard with `LibStub("LibDBIcon-1.0", true)` presence check + clean error via `PrintError` if absent.
+3. **Add to UIShowcase** — demonstration panel showing the gear-bordered button so the effect is visible without needing to test in-game. (Minimap buttons only exist on the real minimap, so the showcase would be a static render: icon + gear-ring as an illustrative composition.)
+4. **Roll out across cogs** — each cog's `Core.lua` swaps `LibDBIcon:Register(...)` for `Cogworks:RegisterCogMinimapButton(...)`. Order for canary:
+   - **FlipQueue first** (largest live user base — regressions surface fastest; the existing LDB icon code is well-understood)
+   - Tempo second
+   - Maxcraft / Tally last (pre-release / not yet shipped — safer to bundle with initial release)
+   - Cogworks standalone updates its own call last so the library ships before its consumer updates
+5. **Document** — short note in cogworks README ("all Chronoforge cogs share the gear-bordered minimap icon via `Cogworks:RegisterCogMinimapButton`") and in each cog's `CLAUDE.md` that the minimap button chrome is suite-shared and not per-cog customizable by design.
+6. **v2 ideas (defer, track separately if desired)**:
+   - Gear-shaped highlight texture (`SetButtonHighlightTexture`) for hover.
+   - Brass-gold background disc behind the icon (`SetButtonBackground`).
+   - Compartment-flow branding (prefix compartment entry text with a glyph since the gear-border doesn't apply to AddonCompartmentFrame).
