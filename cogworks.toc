@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: Cogworks
 ## Notes: The mainspring of the Cogworks suite — shared core for FlipQueue, Tempo, Maxcraft, and beyond.
 ## Author: Gezmodean
