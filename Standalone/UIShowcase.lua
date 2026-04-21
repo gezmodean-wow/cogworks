@@ -60,10 +60,41 @@ local function createShowcase()
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true)
   f:SetResizable(true)
-  f:SetResizeBounds(520, 360, 1000, 700)
+  f:SetResizeBounds(420, 300, 1200, 900)
   f:SetClampedToScreen(true)
   f:SetScale(cw:GetSetting("uiScale") or 1.0)
   tinsert(UISpecialFrames, "CogworksShowcase")
+
+  -- Respond to settings changes (UI scale, theme, fonts)
+  local settingsOwner = {}
+  cw.RegisterCallback(settingsOwner, cw.Events.SettingsChanged, function(_, key, value)
+    if key == "uiScale" then
+      f:SetScale(value)
+    elseif key == "theme" or key == "themeColor" then
+      -- Re-apply frame-level colors
+      local TT = cw.Theme
+      f:SetBackdropColor(unpack(TT.bg))
+      f:SetBackdropBorderColor(unpack(TT.border))
+      if f._sidebarBg then f._sidebarBg:SetColorTexture(unpack(TT.sidebar)) end
+      if f._sidebarEdge then f._sidebarEdge:SetColorTexture(unpack(TT.border)) end
+      if f._titleBg then f._titleBg:SetColorTexture(unpack(TT.header)) end
+      -- Re-apply nav button states
+      for k, nb in pairs(navButtons) do
+        cw:SetNavButtonActive(nb, k == activePage)
+      end
+      -- Full preset switch: rebuild all pages
+      if key == "theme" then
+        for k, pf in pairs(pageFrames) do
+          pf:Hide()
+          pf:SetParent(nil)
+          pageFrames[k] = nil
+        end
+        local cur = activePage
+        activePage = nil
+        showPage(cur or "gears")
+      end
+    end
+  end)
 
   -- Title bar
   local titleBar = CreateFrame("Frame", nil, f)
@@ -78,6 +109,7 @@ local function createShowcase()
   local titleBg = titleBar:CreateTexture(nil, "BACKGROUND")
   titleBg:SetAllPoints()
   titleBg:SetColorTexture(unpack(T.header))
+  f._titleBg = titleBg
 
   local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   titleText:SetPoint("LEFT", titleBar, "LEFT", 12, 0)
@@ -104,6 +136,7 @@ local function createShowcase()
   local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
   sidebarBg:SetAllPoints()
   sidebarBg:SetColorTexture(unpack(T.sidebar))
+  f._sidebarBg = sidebarBg
 
   -- Sidebar border (right edge)
   local sidebarEdge = sidebar:CreateTexture(nil, "ARTWORK")
@@ -111,6 +144,7 @@ local function createShowcase()
   sidebarEdge:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, 0)
   sidebarEdge:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
   sidebarEdge:SetColorTexture(unpack(T.border))
+  f._sidebarEdge = sidebarEdge
 
   -- Content area
   local content = CreateFrame("Frame", nil, f)
@@ -163,18 +197,69 @@ end
 -- ============================================================================
 
 local function createPageFrame(parent)
-  local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+  local scroll = CreateFrame("ScrollFrame", nil, parent)
   scroll:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -8)
-  scroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -28, 8)
+  scroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -14, 8)
 
   local child = CreateFrame("Frame", nil, scroll)
-  child:SetWidth(parent:GetWidth() - 40)
+  child:SetWidth(scroll:GetWidth())
   scroll:SetScrollChild(child)
 
-  -- re-fit child width on parent resize
-  parent:HookScript("OnSizeChanged", function()
-    child:SetWidth(parent:GetWidth() - 40)
+  -- Thin themed scrollbar
+  local track = CreateFrame("Frame", nil, parent)
+  track:SetWidth(4)
+  track:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 2, 0)
+  track:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 2, 0)
+  local trackBg = track:CreateTexture(nil, "BACKGROUND")
+  trackBg:SetAllPoints()
+  trackBg:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.1)
+
+  local thumb = CreateFrame("Frame", nil, track)
+  thumb:SetWidth(4); thumb:SetHeight(40)
+  thumb:SetPoint("TOP", track, "TOP", 0, 0)
+  local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
+  thumbTex:SetAllPoints()
+  thumbTex:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.4)
+  track:Hide()
+
+  local function updateThumb()
+    local contentH = child:GetHeight()
+    local viewH = scroll:GetHeight()
+    local range = math.max(0, contentH - viewH)
+    if range <= 0.5 then track:Hide(); return end
+    track:Show()
+    local trackH = track:GetHeight()
+    local thumbH = math.max(16, trackH * (viewH / contentH))
+    thumb:SetHeight(thumbH)
+    local cur = scroll:GetVerticalScroll()
+    local frac = range > 0 and (cur / range) or 0
+    thumb:ClearAllPoints()
+    thumb:SetPoint("TOP", track, "TOP", 0, -frac * (trackH - thumbH))
+  end
+
+  scroll:EnableMouseWheel(true)
+  scroll:SetScript("OnMouseWheel", function(sf, delta)
+    local contentH = child:GetHeight()
+    local viewH = sf:GetHeight()
+    local range = math.max(0, contentH - viewH)
+    local step = 40
+    local newVal = math.max(0, math.min(range, sf:GetVerticalScroll() - delta * step))
+    sf:SetVerticalScroll(newVal)
+    updateThumb()
   end)
+
+  local function refreshLayout()
+    local w = scroll:GetWidth()
+    if w and w > 1 then
+      child:SetWidth(w)
+      updateThumb()
+    end
+  end
+
+  parent:HookScript("OnSizeChanged", refreshLayout)
+  parent:HookScript("OnShow", refreshLayout)
+
+  scroll.updateThumb = updateThumb
 
   return scroll, child
 end
@@ -395,16 +480,18 @@ pages.nav = function(parent)
 
   local navY = -8
   for _, item in ipairs(demoItems) do
-    local btn = cw:CreateNavButton(navPanel, item, function()
+    local btn = cw:CreateNavButton(navPanel, item, nil)
+    btn:SetPoint("TOPLEFT", navPanel, "TOPLEFT", 0, navY)
+    btn:SetPoint("RIGHT", navPanel, "RIGHT", 0, 0)
+    demoNavs[#demoNavs + 1] = btn
+    -- Set click handler after btn is assigned so the closure captures it
+    btn:SetScript("OnClick", function()
       for _, b in ipairs(demoNavs) do
         cw:SetNavButtonActive(b, false)
       end
       cw:SetNavButtonActive(btn, true)
       cw:Print("Cogworks", "Nav: " .. item.label)
     end)
-    btn:SetPoint("TOPLEFT", navPanel, "TOPLEFT", 0, navY)
-    btn:SetPoint("RIGHT", navPanel, "RIGHT", 0, 0)
-    demoNavs[#demoNavs + 1] = btn
     navY = navY - 32
   end
 
@@ -429,12 +516,13 @@ pages.nav = function(parent)
   local bNavs = {}
   local bY = -28
   for _, item in ipairs(badgeItems) do
-    local btn = cw:CreateNavButton(badgePanel, item, function()
+    local btn = cw:CreateNavButton(badgePanel, item, nil)
+    btn:SetPoint("TOPLEFT", badgePanel, "TOPLEFT", 0, bY)
+    btn:SetPoint("RIGHT", badgePanel, "RIGHT", 0, 0)
+    btn:SetScript("OnClick", function()
       for _, b in ipairs(bNavs) do cw:SetNavButtonActive(b, false) end
       cw:SetNavButtonActive(btn, true)
     end)
-    btn:SetPoint("TOPLEFT", badgePanel, "TOPLEFT", 0, bY)
-    btn:SetPoint("RIGHT", badgePanel, "RIGHT", 0, 0)
     if btn.badge then
       btn.badge:SetText(item.label == "Inbox" and "3" or "!")
     end
@@ -468,108 +556,385 @@ end
 pages.theme = function(parent)
   local f = CreateFrame("Frame", nil, parent)
   f:SetAllPoints()
-  local scroll, c = createPageFrame(f)
 
-  local y = 0
+  local PREVIEW_HEIGHT = 130
+  local swatches = {}
+  local previewWidgets = {}
 
-  local function addSwatch(label, color, yPos)
-    local swatch = c:CreateTexture(nil, "ARTWORK")
-    swatch:SetSize(20, 20)
-    swatch:SetPoint("TOPLEFT", c, "TOPLEFT", 8, yPos)
-    swatch:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
-
-    -- Border around swatch
-    local border = c:CreateTexture(nil, "OVERLAY")
-    border:SetSize(22, 22)
-    border:SetPoint("CENTER", swatch, "CENTER")
-    border:SetColorTexture(unpack(T.border))
-    border:SetDrawLayer("ARTWORK", -1)
-
-    local text = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text:SetPoint("LEFT", swatch, "RIGHT", 8, 0)
-    text:SetText(label)
-    text:SetTextColor(unpack(T.text))
-
-    local hex = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hex:SetPoint("LEFT", text, "RIGHT", 8, 0)
-    local r, g, b = math.floor(color[1]*255), math.floor(color[2]*255), math.floor(color[3]*255)
-    hex:SetText(string.format("|cff888888#%02x%02x%02x|r", r, g, b))
-  end
-
-  -- Backgrounds
-  cw:CreateSectionHeader(c, "Backgrounds", y)
-  y = y - 22
-  local bgColors = {
-    { "bg (primary dark)",   T.bg },
-    { "bgLight (panel)",     T.bgLight },
-    { "bgDark (inset)",      T.bgDark },
-    { "header (toolbar)",    T.header },
-    { "sidebar",             T.sidebar },
-    { "border",              T.border },
-    { "rowAlt",              T.rowAlt },
-    { "rowHover",            T.rowHover },
-  }
-  for _, s in ipairs(bgColors) do
-    addSwatch(s[1], s[2], y)
-    y = y - 26
-  end
-
-  -- Accents
-  y = y - 8
-  cw:CreateSectionHeader(c, "Accents", y)
-  y = y - 22
-  local accentColors = {
-    { "gold (primary accent)", T.gold },
-    { "arcane (time magic)",   T.arcane },
-    { "brass (clockwork)",     T.brass },
-  }
-  for _, s in ipairs(accentColors) do
-    addSwatch(s[1], s[2], y)
-    y = y - 26
-  end
-
-  -- Status
-  y = y - 8
-  cw:CreateSectionHeader(c, "Status", y)
-  y = y - 22
-  local statusColors = {
-    { "success", T.success },
-    { "warning", T.warning },
-    { "error",   T.error },
-  }
-  for _, s in ipairs(statusColors) do
-    addSwatch(s[1], s[2], y)
-    y = y - 26
-  end
-
-  -- Text
-  y = y - 8
-  cw:CreateSectionHeader(c, "Text", y)
-  y = y - 22
-  local textColors = {
-    { "text (primary)",      T.text },
-    { "textDim (secondary)", T.textDim },
-    { "textDisabled",        T.textDisabled },
-    { "muted",               T.muted },
-  }
-  for _, s in ipairs(textColors) do
-    addSwatch(s[1], s[2], y)
-    y = y - 26
-  end
-
-  -- Quality colors
-  y = y - 8
-  cw:CreateSectionHeader(c, "Item Quality", y)
-  y = y - 22
-  local qualNames = { [0]="Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact", "Heirloom", "WoW Token" }
-  for i = 0, 8 do
-    if T.quality[i] then
-      addSwatch(qualNames[i] or ("Quality " .. i), T.quality[i], y)
-      y = y - 26
+  local function refreshPreview()
+    local TT = cw.Theme
+    for _, pw in ipairs(previewWidgets) do
+      if pw.type == "backdrop" then
+        pw.frame:SetBackdropColor(unpack(TT[pw.bgKey] or TT.bg))
+        pw.frame:SetBackdropBorderColor(unpack(TT.border))
+      elseif pw.type == "texture" then
+        local c = TT[pw.colorKey]
+        if c then pw.tex:SetColorTexture(c[1], c[2], c[3], c[4] or 1) end
+      elseif pw.type == "text" then
+        local c = TT[pw.colorKey]
+        if c then pw.fs:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
+      elseif pw.type == "button" then
+        pw.frame:SetBackdropColor(unpack(TT.header))
+        pw.frame:SetBackdropBorderColor(unpack(TT.border))
+      elseif pw.type == "bar" then
+        local c = TT[pw.colorKey]
+        if c then pw.tex:SetColorTexture(c[1], c[2], c[3], 0.8) end
+      end
     end
   end
 
-  y = y - 10
+  -- Live preview panel (fixed, does not scroll)
+  cw:CreateSectionHeader(f, "Live Preview", -4)
+
+  local previewOuter = CreateFrame("Frame", nil, f, "BackdropTemplate")
+  previewOuter:SetSize(460, 110)
+  previewOuter:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -22)
+  previewOuter:SetBackdrop(cw.Backdrop)
+  previewOuter:SetBackdropColor(unpack(T.bg))
+  previewOuter:SetBackdropBorderColor(unpack(T.border))
+  previewWidgets[#previewWidgets+1] = { type="backdrop", frame=previewOuter, bgKey="bg" }
+
+  -- Mini sidebar
+  local pvSidebar = CreateFrame("Frame", nil, previewOuter)
+  pvSidebar:SetWidth(80)
+  pvSidebar:SetPoint("TOPLEFT", previewOuter, "TOPLEFT", 4, -4)
+  pvSidebar:SetPoint("BOTTOMLEFT", previewOuter, "BOTTOMLEFT", 4, 4)
+  local pvSidebarBg = pvSidebar:CreateTexture(nil, "BACKGROUND")
+  pvSidebarBg:SetAllPoints()
+  pvSidebarBg:SetColorTexture(unpack(T.sidebar))
+  previewWidgets[#previewWidgets+1] = { type="texture", tex=pvSidebarBg, colorKey="sidebar" }
+
+  -- Sidebar nav items
+  local pvNavLabels = { "Dashboard", "Tasks", "Settings" }
+  for i, lbl in ipairs(pvNavLabels) do
+    local pvNav = pvSidebar:CreateFontString(nil, "OVERLAY")
+    pvNav:SetFontObject(cw.Fonts.small)
+    pvNav:SetPoint("TOPLEFT", pvSidebar, "TOPLEFT", 6, -6 - (i-1) * 18)
+    pvNav:SetText(lbl)
+    local ck = i == 1 and "text" or "textDim"
+    pvNav:SetTextColor(unpack(T[ck]))
+    previewWidgets[#previewWidgets+1] = { type="text", fs=pvNav, colorKey=ck }
+    if i == 1 then
+      local accent = pvSidebar:CreateTexture(nil, "ARTWORK")
+      accent:SetSize(2, 14)
+      accent:SetPoint("LEFT", pvSidebar, "LEFT", 0, 0)
+      accent:SetPoint("TOP", pvNav, "TOP", 0, 0)
+      accent:SetColorTexture(unpack(T.gold))
+      previewWidgets[#previewWidgets+1] = { type="texture", tex=accent, colorKey="gold" }
+    end
+  end
+
+  -- Mini header
+  local pvHeader = CreateFrame("Frame", nil, previewOuter)
+  pvHeader:SetHeight(20)
+  pvHeader:SetPoint("TOPLEFT", pvSidebar, "TOPRIGHT", 2, 0)
+  pvHeader:SetPoint("RIGHT", previewOuter, "RIGHT", -4, 0)
+  local pvHeaderBg = pvHeader:CreateTexture(nil, "BACKGROUND")
+  pvHeaderBg:SetAllPoints()
+  pvHeaderBg:SetColorTexture(unpack(T.header))
+  previewWidgets[#previewWidgets+1] = { type="texture", tex=pvHeaderBg, colorKey="header" }
+
+  local pvTitle = pvHeader:CreateFontString(nil, "OVERLAY")
+  pvTitle:SetFontObject(cw.Fonts.small)
+  pvTitle:SetPoint("LEFT", pvHeader, "LEFT", 6, 0)
+  pvTitle:SetText("Sample Panel")
+  pvTitle:SetTextColor(unpack(T.gold))
+  previewWidgets[#previewWidgets+1] = { type="text", fs=pvTitle, colorKey="gold" }
+
+  -- Content area with sample widgets
+  local pvContent = CreateFrame("Frame", nil, previewOuter)
+  pvContent:SetPoint("TOPLEFT", pvHeader, "BOTTOMLEFT", 0, -2)
+  pvContent:SetPoint("BOTTOMRIGHT", previewOuter, "BOTTOMRIGHT", -4, 4)
+
+  -- Sample button
+  local pvBtn = CreateFrame("Frame", nil, pvContent, "BackdropTemplate")
+  pvBtn:SetSize(80, 20)
+  pvBtn:SetPoint("TOPLEFT", pvContent, "TOPLEFT", 6, -6)
+  pvBtn:SetBackdrop(cw.BackdropSmall)
+  pvBtn:SetBackdropColor(unpack(T.header))
+  pvBtn:SetBackdropBorderColor(unpack(T.border))
+  previewWidgets[#previewWidgets+1] = { type="button", frame=pvBtn }
+  local pvBtnText = pvBtn:CreateFontString(nil, "OVERLAY")
+  pvBtnText:SetFontObject(cw.Fonts.small)
+  pvBtnText:SetPoint("CENTER")
+  pvBtnText:SetText("Button")
+  pvBtnText:SetTextColor(unpack(T.text))
+  previewWidgets[#previewWidgets+1] = { type="text", fs=pvBtnText, colorKey="text" }
+
+  -- Sample progress bar
+  local pvBarBg = CreateFrame("Frame", nil, pvContent, "BackdropTemplate")
+  pvBarBg:SetSize(140, 12)
+  pvBarBg:SetPoint("LEFT", pvBtn, "RIGHT", 8, 0)
+  pvBarBg:SetBackdrop({ bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", edgeSize=8, insets={left=2,right=2,top=2,bottom=2} })
+  pvBarBg:SetBackdropColor(0.05, 0.05, 0.08, 1)
+  pvBarBg:SetBackdropBorderColor(unpack(T.border))
+  local pvBarFill = pvBarBg:CreateTexture(nil, "ARTWORK")
+  pvBarFill:SetPoint("TOPLEFT", pvBarBg, "TOPLEFT", 2, -2)
+  pvBarFill:SetPoint("BOTTOMLEFT", pvBarBg, "BOTTOMLEFT", 2, 2)
+  pvBarFill:SetWidth(90)
+  pvBarFill:SetColorTexture(T.success[1], T.success[2], T.success[3], 0.8)
+  previewWidgets[#previewWidgets+1] = { type="bar", tex=pvBarFill, colorKey="success" }
+
+  -- Sample text
+  local pvTexts = {
+    { "Normal text", "text", 0, -32 },
+    { "Dimmed label", "textDim", 0, -46 },
+    { "Disabled", "textDisabled", 80, -46 },
+    { "Success", "success", 0, -60 },
+    { "Warning", "warning", 60, -60 },
+    { "Error", "error", 120, -60 },
+  }
+  for _, td in ipairs(pvTexts) do
+    local fs = pvContent:CreateFontString(nil, "OVERLAY")
+    fs:SetFontObject(cw.Fonts.small)
+    fs:SetPoint("TOPLEFT", pvContent, "TOPLEFT", 6 + td[3], td[4])
+    fs:SetText(td[1])
+    fs:SetTextColor(unpack(T[td[2]]))
+    previewWidgets[#previewWidgets+1] = { type="text", fs=fs, colorKey=td[2] }
+  end
+
+  -- Arcane accent sample
+  local pvArcane = pvContent:CreateFontString(nil, "OVERLAY")
+  pvArcane:SetFontObject(cw.Fonts.small)
+  pvArcane:SetPoint("TOPLEFT", pvContent, "TOPLEFT", 160, -32)
+  pvArcane:SetText("Arcane glow")
+  pvArcane:SetTextColor(unpack(T.arcane))
+  previewWidgets[#previewWidgets+1] = { type="text", fs=pvArcane, colorKey="arcane" }
+
+  local pvBrass = pvContent:CreateFontString(nil, "OVERLAY")
+  pvBrass:SetFontObject(cw.Fonts.small)
+  pvBrass:SetPoint("TOPLEFT", pvArcane, "BOTTOMLEFT", 0, -4)
+  pvBrass:SetText("Brass trim")
+  pvBrass:SetTextColor(unpack(T.brass))
+  previewWidgets[#previewWidgets+1] = { type="text", fs=pvBrass, colorKey="brass" }
+
+  -- Scrollable area below the fixed preview
+  local scrollArea = CreateFrame("Frame", nil, f)
+  scrollArea:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -(PREVIEW_HEIGHT + 4))
+  scrollArea:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+  local scroll, c = createPageFrame(scrollArea)
+
+  local y = 0
+
+  local function refreshSwatches()
+    for _, sw in ipairs(swatches) do
+      local color = cw.Theme[sw.key]
+      if color then
+        sw.tex:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+        local r, g, b = math.floor(color[1]*255), math.floor(color[2]*255), math.floor(color[3]*255)
+        sw.hex:SetText(string.format("|cff888888#%02x%02x%02x|r", r, g, b))
+      end
+    end
+    refreshPreview()
+  end
+
+  local function addEditableSwatch(key, label, yPos)
+    local color = cw.Theme[key]
+    if not color then return yPos end
+
+    local btn = CreateFrame("Button", nil, c)
+    btn:SetSize(20, 20)
+    btn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, yPos)
+
+    local tex = btn:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    tex:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+
+    local borderTex = c:CreateTexture(nil, "ARTWORK", nil, -1)
+    borderTex:SetSize(22, 22)
+    borderTex:SetPoint("CENTER", btn, "CENTER")
+    borderTex:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+
+    local text = c:CreateFontString(nil, "OVERLAY")
+    text:SetFontObject(cw.Fonts.normal)
+    text:SetPoint("LEFT", btn, "RIGHT", 8, 0)
+    text:SetText(label)
+    text:SetTextColor(unpack(T.text))
+
+    local hex = c:CreateFontString(nil, "OVERLAY")
+    hex:SetFontObject(cw.Fonts.small)
+    hex:SetPoint("LEFT", text, "RIGHT", 8, 0)
+    local r, g, b = math.floor(color[1]*255), math.floor(color[2]*255), math.floor(color[3]*255)
+    hex:SetText(string.format("|cff888888#%02x%02x%02x|r", r, g, b))
+
+    swatches[#swatches + 1] = { key = key, tex = tex, hex = hex }
+
+    btn:SetScript("OnClick", function()
+      local cur = cw.Theme[key]
+      local info = {
+        r = cur[1], g = cur[2], b = cur[3],
+        hasOpacity = true, opacity = cur[4] or 1,
+        swatchFunc = function()
+          local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+          local na = (ColorPickerFrame.GetColorAlpha and ColorPickerFrame:GetColorAlpha()) or 1
+          cw:SetThemeColor(key, nr, ng, nb, na)
+          refreshSwatches()
+        end,
+        cancelFunc = function(prev)
+          cw:SetThemeColor(key, prev.r, prev.g, prev.b, prev.a or 1)
+          refreshSwatches()
+        end,
+      }
+      ColorPickerFrame:SetupColorPickerAndShow(info)
+    end)
+
+    return yPos - 24
+  end
+
+  -- Theme preset selector
+  cw:CreateSectionHeader(c, "Theme Presets", y)
+  y = y - 22
+
+  local themeLabel = c:CreateFontString(nil, "OVERLAY")
+  themeLabel:SetFontObject(cw.Fonts.normal)
+  themeLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  themeLabel:SetText("Active: |cffd4a017" .. cw.activeThemeName .. "|r")
+  y = y - 26
+
+  local presetNames = { "Cogworks", "Midnight", "Forge", "Frost", "Classic" }
+  local xOff = 8
+  for _, name in ipairs(presetNames) do
+    local btn = cw:CreateButton(c, name, 90, 24, function()
+      cw:SetTheme(name)
+      cw.settings.theme = name
+      themeLabel:SetText("Active: |cffd4a017" .. name .. "|r")
+      refreshSwatches()
+    end)
+    btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
+    xOff = xOff + 98
+    if xOff > 400 then xOff = 8; y = y - 32 end
+  end
+  y = y - 36
+
+  -- Custom theme names
+  local customNames = {}
+  for name in pairs(cw.CustomThemes) do customNames[#customNames + 1] = name end
+  if #customNames > 0 then
+    table.sort(customNames)
+    cw:CreateSectionHeader(c, "Custom Themes", y)
+    y = y - 22
+    xOff = 8
+    for _, name in ipairs(customNames) do
+      local btn = cw:CreateButton(c, name, 110, 24, function()
+        cw:SetTheme(name)
+        cw.settings.theme = name
+        themeLabel:SetText("Active: |cffd4a017" .. name .. "|r")
+        refreshSwatches()
+      end)
+      btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
+      xOff = xOff + 118
+      if xOff > 400 then xOff = 8; y = y - 32 end
+    end
+    y = y - 36
+  end
+
+  -- Editable color swatches (click to open color picker)
+  cw:CreateSectionHeader(c, "Colors (click swatch to edit)", y)
+  y = y - 22
+
+  local colorDefs = {
+    { "Backgrounds", { {"bg","bg"}, {"bgLight","bgLight"}, {"bgDark","bgDark"},
+      {"header","header"}, {"sidebar","sidebar"}, {"border","border"} } },
+    { "Rows", { {"rowAlt","rowAlt"}, {"rowHover","rowHover"} } },
+    { "Accents", { {"gold","gold"}, {"arcane","arcane"}, {"brass","brass"} } },
+    { "Status", { {"success","success"}, {"warning","warning"}, {"error","error"} } },
+    { "Text", { {"text","text"}, {"textDim","textDim"}, {"textDisabled","textDisabled"} } },
+  }
+
+  for _, group in ipairs(colorDefs) do
+    local groupLabel = c:CreateFontString(nil, "OVERLAY")
+    groupLabel:SetFontObject(cw.Fonts.small)
+    groupLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+    groupLabel:SetText("|cffd4a017" .. group[1] .. "|r")
+    y = y - 18
+    for _, pair in ipairs(group[2]) do
+      y = addEditableSwatch(pair[1], pair[2], y)
+    end
+    y = y - 6
+  end
+
+  -- Save / Export / Import
+  y = y - 4
+  cw:CreateSectionHeader(c, "Save & Share", y)
+  y = y - 22
+
+  local saveBtn = cw:CreateButton(c, "Save as Custom", 140, 26, function()
+    local popup = cw:CreatePopup({ title = "Save Theme", width = 360, height = 140 })
+    local nameBox = CreateFrame("EditBox", nil, popup.content, "InputBoxTemplate")
+    nameBox:SetSize(280, 22)
+    nameBox:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 8, -8)
+    nameBox:SetAutoFocus(true)
+    nameBox:SetText("My Theme")
+    nameBox:SetFontObject(cw.Fonts.normal)
+    popup:SetButtons({
+      { label = "Save", onClick = function()
+        local n = nameBox:GetText():gsub("^%s+",""):gsub("%s+$","")
+        if n ~= "" then
+          cw:SaveCustomTheme(n)
+          cw.activeThemeName = n
+          cw.settings.theme = n
+          themeLabel:SetText("Active: |cffd4a017" .. n .. "|r")
+          cw:Print("Cogworks", "Theme saved: " .. n)
+        end
+      end },
+      { label = "Cancel" },
+    })
+    popup:Show()
+  end)
+  saveBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+
+  local exportBtn = cw:CreateButton(c, "Export", 80, 26, function()
+    local str = cw:ExportTheme()
+    local popup = cw:CreatePopup({ title = "Export Theme", width = 480, height = 160 })
+    local box = CreateFrame("EditBox", nil, popup.content, "InputBoxTemplate")
+    box:SetSize(420, 22)
+    box:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 8, -8)
+    box:SetText(str)
+    box:SetFontObject(cw.Fonts.small)
+    box:SetAutoFocus(true)
+    box:HighlightText()
+    local hint = popup.content:CreateFontString(nil, "OVERLAY")
+    hint:SetFontObject(cw.Fonts.small)
+    hint:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -6)
+    hint:SetText("Ctrl+C to copy, share on Discord")
+    hint:SetTextColor(unpack(T.textDim))
+    popup:SetButtons({ { label = "Close" } })
+    popup:Show()
+  end)
+  exportBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
+
+  local importBtn = cw:CreateButton(c, "Import", 80, 26, function()
+    local popup = cw:CreatePopup({ title = "Import Theme", width = 480, height = 160 })
+    local box = CreateFrame("EditBox", nil, popup.content, "InputBoxTemplate")
+    box:SetSize(420, 22)
+    box:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 8, -8)
+    box:SetFontObject(cw.Fonts.small)
+    box:SetAutoFocus(true)
+    local hint = popup.content:CreateFontString(nil, "OVERLAY")
+    hint:SetFontObject(cw.Fonts.small)
+    hint:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -6)
+    hint:SetText("Paste a CogworksTheme: string and click Import")
+    hint:SetTextColor(unpack(T.textDim))
+    popup:SetButtons({
+      { label = "Import", onClick = function()
+        local name, err = cw:ImportTheme(box:GetText())
+        if name then
+          cw:SetTheme(name)
+          cw.settings.theme = name
+          themeLabel:SetText("Active: |cffd4a017" .. name .. "|r")
+          refreshSwatches()
+          cw:Print("Cogworks", "Theme imported: " .. name)
+        else
+          cw:PrintError("Cogworks", "Import failed: " .. (err or "unknown"))
+        end
+      end },
+      { label = "Cancel" },
+    })
+    popup:Show()
+  end)
+  importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 8, 0)
+
+  y = y - 40
   c:SetHeight(math.abs(y) + 20)
   return f
 end
@@ -977,28 +1342,21 @@ pages.settings = function(parent)
   local y = 0
 
   -- Font Family
-  cw:CreateSectionHeader(c, "Font Family", y)
-  y = y - 22
+  local fontSource = cw:HasSharedMedia() and "LibSharedMedia" or "Built-in"
+  cw:CreateSectionHeader(c, "Font Family (" .. fontSource .. ")", y)
+  y = y - 24
 
-  local familyLabel = c:CreateFontString(nil, "OVERLAY")
-  familyLabel:SetFontObject(cw.Fonts.normal)
-  familyLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  familyLabel:SetText("Current: " .. (cw.FontFamilies[cw:GetSetting("fontFamily") or "default"] or {}).label)
-  familyLabel:SetTextColor(unpack(T.text))
-  y = y - 28
-
-  local familyOrder = { "default", "arial", "morpheus", "skurri" }
-  local xOff = 8
-  for _, fk in ipairs(familyOrder) do
-    local fam = cw.FontFamilies[fk]
-    local btn = cw:CreateButton(c, fam.label, 110, 24, function()
-      cw:SetSetting("fontFamily", fk)
-      familyLabel:SetText("Current: " .. fam.label)
-    end)
-    btn:SetPoint("TOPLEFT", c, "TOPLEFT", xOff, y)
-    xOff = xOff + 118
-    if xOff > 380 then xOff = 8; y = y - 32 end
+  local fontList = cw:GetFontList()
+  local fontItems = {}
+  for _, fi in ipairs(fontList) do
+    fontItems[#fontItems + 1] = { key = fi.key, label = fi.label, fontPath = fi.path }
   end
+
+  local fontDD = cw:CreateDropdown(c, fontItems, cw:GetSetting("fontFamily") or "default", function(key, label)
+    cw:SetSetting("fontFamily", key)
+  end)
+  fontDD:SetSize(240, 26)
+  fontDD:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
   y = y - 40
 
   -- Font Scale
@@ -1113,6 +1471,7 @@ end
 function ns:ToggleShowcase()
   if not showcase then
     showcase = createShowcase()
+    showcase:Hide()
     showPage("gears")
   end
 

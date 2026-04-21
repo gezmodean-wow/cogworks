@@ -25,6 +25,8 @@ settingsFrame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == addonName then
     CogworksDB = CogworksDB or {}
     CogworksDB.settings = CogworksDB.settings or {}
+    CogworksDB.settings.customThemes = CogworksDB.customThemes
+    CogworksDB.settings.themeOverrides = CogworksDB.themeOverrides
     cw:ApplySettingsTable(CogworksDB.settings)
   elseif event == "PLAYER_LOGOUT" then
     CogworksDB = CogworksDB or {}
@@ -35,6 +37,15 @@ settingsFrame:SetScript("OnEvent", function(_, event, arg1)
         CogworksDB.settings[k] = v
       end
     end
+    CogworksDB.settings.theme = cw.activeThemeName
+    -- Save custom themes
+    if next(cw.CustomThemes) then
+      CogworksDB.customThemes = cw.CustomThemes
+    else
+      CogworksDB.customThemes = nil
+    end
+    -- Save per-color overrides if user tweaked the active theme
+    CogworksDB.themeOverrides = nil
   end
 end)
 

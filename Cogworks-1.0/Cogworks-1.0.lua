@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 4
+local MAJOR, MINOR = "Cogworks-1.0", 5
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -28,7 +28,7 @@ oldminor = oldminor or 0
 -- Version
 -- ============================================================================
 
-lib.version      = "0.4.0"   -- human-facing semver of the Cogworks suite
+lib.version      = "0.5.0"   -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -137,54 +137,189 @@ function lib:PrintError(addonName, ...)
 end
 
 -- ============================================================================
--- Theme constants
+-- Theme system
 -- ============================================================================
--- The shared visual palette across the suite: dark TSM-style base, gold
--- primary accent, and a subtle arcane-purple highlight reserved for
--- "time magic" moments (reset-soon warnings, profit-surge callouts, etc.).
+-- Named themes with a full color palette. The active theme is applied to
+-- lib.Theme in-place so existing local references stay valid. Players can
+-- customize colors, export/import themes, and switch with a preview.
 
-lib.Theme = lib.Theme or {
-  -- Backgrounds
-  bg        = { 0.08, 0.08, 0.12, 0.95 },   -- primary dark bg
-  bgLight   = { 0.12, 0.12, 0.16, 0.95 },   -- panel bg
-  bgDark    = { 0.04, 0.04, 0.07, 1.00 },   -- inset / header bg
-  header    = { 0.15, 0.15, 0.20, 1.00 },   -- header / toolbar bg
-  sidebar   = { 0.06, 0.06, 0.10, 1.00 },   -- sidebar bg
-  border    = { 0.30, 0.30, 0.40, 1.00 },
-
-  -- Row styling (lists / tables)
-  rowAlt    = { 1.00, 1.00, 1.00, 0.03 },   -- alternating row tint
-  rowHover  = { 1.00, 1.00, 1.00, 0.08 },   -- hovered row highlight
-
-  -- Accents
-  gold      = { 1.00, 0.82, 0.00, 1.00 },   -- primary accent
-  arcane    = { 0.55, 0.36, 0.96, 1.00 },   -- "time magic" highlight (#8b5cf6)
-  brass     = { 0.83, 0.63, 0.09, 1.00 },   -- clockwork trim
-
-  -- Status
-  success   = { 0.30, 0.85, 0.30, 1.00 },
-  warning   = { 1.00, 0.78, 0.10, 1.00 },
-  error     = { 1.00, 0.25, 0.25, 1.00 },
-
-  -- Text
-  text      = { 0.90, 0.90, 0.92, 1.00 },
-  textDim   = { 0.60, 0.60, 0.60, 1.00 },   -- secondary / label text
-  textDisabled = { 0.40, 0.40, 0.40, 1.00 },
-  muted     = { 0.55, 0.55, 0.60, 1.00 },   -- kept for back-compat
-
-  -- WoW item quality colors (for reference / shared widgets)
-  quality = {
-    [0] = { 0.62, 0.62, 0.62 },  -- Poor
-    [1] = { 1.00, 1.00, 1.00 },  -- Common
-    [2] = { 0.12, 1.00, 0.00 },  -- Uncommon
-    [3] = { 0.00, 0.44, 0.87 },  -- Rare
-    [4] = { 0.64, 0.21, 0.93 },  -- Epic
-    [5] = { 1.00, 0.50, 0.00 },  -- Legendary
-    [6] = { 0.90, 0.80, 0.50 },  -- Artifact
-    [7] = { 0.00, 0.80, 1.00 },  -- Heirloom
-    [8] = { 0.00, 0.80, 1.00 },  -- WoW Token
-  },
+local THEME_KEYS = {
+  "bg", "bgLight", "bgDark", "header", "sidebar", "border",
+  "rowAlt", "rowHover",
+  "gold", "arcane", "brass",
+  "success", "warning", "error",
+  "text", "textDim", "textDisabled", "muted",
 }
+
+local function copyColor(c) return { c[1], c[2], c[3], c[4] or 1 } end
+
+local function deepCopyTheme(src)
+  local dst = {}
+  for _, k in ipairs(THEME_KEYS) do
+    if src[k] then dst[k] = copyColor(src[k]) end
+  end
+  if src.quality then
+    dst.quality = {}
+    for i, c in pairs(src.quality) do dst.quality[i] = copyColor(c) end
+  end
+  return dst
+end
+
+-- Quality colors are shared across all themes
+local QUALITY_COLORS = {
+  [0] = { 0.62, 0.62, 0.62 },  -- Poor
+  [1] = { 1.00, 1.00, 1.00 },  -- Common
+  [2] = { 0.12, 1.00, 0.00 },  -- Uncommon
+  [3] = { 0.00, 0.44, 0.87 },  -- Rare
+  [4] = { 0.64, 0.21, 0.93 },  -- Epic
+  [5] = { 1.00, 0.50, 0.00 },  -- Legendary
+  [6] = { 0.90, 0.80, 0.50 },  -- Artifact
+  [7] = { 0.00, 0.80, 1.00 },  -- Heirloom
+  [8] = { 0.00, 0.80, 1.00 },  -- WoW Token
+}
+
+-- Built-in theme presets
+lib.ThemePresets = lib.ThemePresets or {}
+
+lib.ThemePresets["Cogworks"] = {
+  bg={0.08,0.08,0.12,0.95}, bgLight={0.12,0.12,0.16,0.95}, bgDark={0.04,0.04,0.07,1},
+  header={0.15,0.15,0.20,1}, sidebar={0.06,0.06,0.10,1}, border={0.30,0.30,0.40,1},
+  rowAlt={1,1,1,0.03}, rowHover={1,1,1,0.08},
+  gold={1,0.82,0,1}, arcane={0.55,0.36,0.96,1}, brass={0.83,0.63,0.09,1},
+  success={0.30,0.85,0.30,1}, warning={1,0.78,0.10,1}, error={1,0.25,0.25,1},
+  text={0.90,0.90,0.92,1}, textDim={0.60,0.60,0.60,1}, textDisabled={0.40,0.40,0.40,1},
+  muted={0.55,0.55,0.60,1},
+}
+
+lib.ThemePresets["Midnight"] = {
+  bg={0.05,0.05,0.10,0.95}, bgLight={0.08,0.08,0.14,0.95}, bgDark={0.02,0.02,0.06,1},
+  header={0.10,0.10,0.18,1}, sidebar={0.04,0.04,0.08,1}, border={0.20,0.22,0.35,1},
+  rowAlt={0.4,0.5,1,0.03}, rowHover={0.4,0.5,1,0.08},
+  gold={0.60,0.75,1.00,1}, arcane={0.40,0.50,0.95,1}, brass={0.50,0.60,0.80,1},
+  success={0.20,0.70,0.50,1}, warning={0.80,0.70,0.30,1}, error={0.90,0.25,0.30,1},
+  text={0.80,0.85,0.95,1}, textDim={0.50,0.55,0.65,1}, textDisabled={0.35,0.38,0.48,1},
+  muted={0.45,0.50,0.60,1},
+}
+
+lib.ThemePresets["Forge"] = {
+  bg={0.10,0.06,0.04,0.95}, bgLight={0.14,0.09,0.06,0.95}, bgDark={0.06,0.03,0.02,1},
+  header={0.18,0.10,0.06,1}, sidebar={0.08,0.05,0.03,1}, border={0.40,0.25,0.15,1},
+  rowAlt={1,0.8,0.5,0.03}, rowHover={1,0.8,0.5,0.08},
+  gold={1,0.65,0.15,1}, arcane={0.85,0.35,0.15,1}, brass={0.90,0.55,0.10,1},
+  success={0.40,0.80,0.20,1}, warning={1,0.70,0.10,1}, error={1,0.20,0.15,1},
+  text={0.95,0.88,0.80,1}, textDim={0.65,0.55,0.45,1}, textDisabled={0.45,0.38,0.30,1},
+  muted={0.60,0.50,0.42,1},
+}
+
+lib.ThemePresets["Frost"] = {
+  bg={0.06,0.08,0.12,0.95}, bgLight={0.08,0.12,0.18,0.95}, bgDark={0.03,0.04,0.07,1},
+  header={0.10,0.14,0.22,1}, sidebar={0.04,0.06,0.10,1}, border={0.25,0.35,0.45,1},
+  rowAlt={0.5,0.8,1,0.03}, rowHover={0.5,0.8,1,0.08},
+  gold={0.40,0.85,1.00,1}, arcane={0.30,0.60,1.00,1}, brass={0.50,0.75,0.90,1},
+  success={0.20,0.80,0.60,1}, warning={0.90,0.80,0.30,1}, error={0.90,0.30,0.35,1},
+  text={0.85,0.92,0.98,1}, textDim={0.55,0.65,0.75,1}, textDisabled={0.38,0.45,0.55,1},
+  muted={0.50,0.58,0.68,1},
+}
+
+lib.ThemePresets["Classic"] = {
+  bg={0.10,0.10,0.10,0.95}, bgLight={0.15,0.15,0.15,0.95}, bgDark={0.05,0.05,0.05,1},
+  header={0.18,0.18,0.18,1}, sidebar={0.08,0.08,0.08,1}, border={0.35,0.35,0.35,1},
+  rowAlt={1,1,1,0.03}, rowHover={1,1,1,0.08},
+  gold={1,0.82,0,1}, arcane={0.65,0.50,0.90,1}, brass={0.75,0.65,0.30,1},
+  success={0.30,0.80,0.30,1}, warning={1,0.80,0.20,1}, error={1,0.25,0.25,1},
+  text={0.90,0.90,0.90,1}, textDim={0.60,0.60,0.60,1}, textDisabled={0.40,0.40,0.40,1},
+  muted={0.55,0.55,0.55,1},
+}
+
+-- Custom themes stored by users (populated from CogworksDB)
+lib.CustomThemes = lib.CustomThemes or {}
+
+-- Active theme name
+lib.activeThemeName = lib.activeThemeName or "Cogworks"
+
+-- The live theme table — updated in-place so existing references stay valid
+lib.Theme = lib.Theme or deepCopyTheme(lib.ThemePresets["Cogworks"])
+lib.Theme.quality = lib.Theme.quality or {}
+for i, c in pairs(QUALITY_COLORS) do
+  lib.Theme.quality[i] = lib.Theme.quality[i] or copyColor(c)
+end
+
+function lib:GetThemeNames()
+  local names = {}
+  for name in pairs(self.ThemePresets) do names[#names + 1] = name end
+  for name in pairs(self.CustomThemes) do names[#names + 1] = name end
+  table.sort(names)
+  return names
+end
+
+function lib:GetThemeData(name)
+  return self.ThemePresets[name] or self.CustomThemes[name]
+end
+
+function lib:SetTheme(name)
+  local src = self:GetThemeData(name)
+  if not src then return end
+  self.activeThemeName = name
+  for _, k in ipairs(THEME_KEYS) do
+    if src[k] then
+      local dst = self.Theme[k]
+      if dst then
+        dst[1], dst[2], dst[3], dst[4] = src[k][1], src[k][2], src[k][3], src[k][4] or 1
+      else
+        self.Theme[k] = copyColor(src[k])
+      end
+    end
+  end
+  self:Fire(self.Events.SettingsChanged, "theme", name, nil)
+end
+
+function lib:SetThemeColor(key, r, g, b, a)
+  if not self.Theme[key] then return end
+  self.Theme[key][1] = r
+  self.Theme[key][2] = g
+  self.Theme[key][3] = b
+  self.Theme[key][4] = a or 1
+  self:Fire(self.Events.SettingsChanged, "themeColor", key, nil)
+end
+
+function lib:SaveCustomTheme(name)
+  self.CustomThemes[name] = deepCopyTheme(self.Theme)
+end
+
+function lib:DeleteCustomTheme(name)
+  self.CustomThemes[name] = nil
+end
+
+function lib:ExportTheme()
+  local parts = { "CogworksTheme:" .. (self.activeThemeName or "Custom") }
+  for _, k in ipairs(THEME_KEYS) do
+    local c = self.Theme[k]
+    if c then
+      parts[#parts + 1] = string.format("%s=%02x%02x%02x%02x",
+        k, math.floor(c[1]*255), math.floor(c[2]*255),
+        math.floor(c[3]*255), math.floor((c[4] or 1)*255))
+    end
+  end
+  return table.concat(parts, "|")
+end
+
+function lib:ImportTheme(str)
+  if not str or str == "" then return nil, "Empty string" end
+  local name = str:match("^CogworksTheme:([^|]+)")
+  if not name then return nil, "Invalid format" end
+  local theme = deepCopyTheme(self.ThemePresets["Cogworks"])
+  for k, hex in str:gmatch("(%w+)=(%x+)") do
+    if #hex == 8 and theme[k] then
+      local r = tonumber(hex:sub(1,2), 16) / 255
+      local g = tonumber(hex:sub(3,4), 16) / 255
+      local b = tonumber(hex:sub(5,6), 16) / 255
+      local a = tonumber(hex:sub(7,8), 16) / 255
+      theme[k] = { r, g, b, a }
+    end
+  end
+  self.CustomThemes[name] = theme
+  return name
+end
 
 -- ============================================================================
 -- Backdrop templates
@@ -246,6 +381,90 @@ function lib:HasSyndicator()
 end
 
 -- ============================================================================
+-- LibSharedMedia bridge
+-- ============================================================================
+-- Optional integration with LibSharedMedia-3.0. If LSM is loaded (most players
+-- with ElvUI, WeakAuras, or DBM have it), fonts and sounds expand from 4
+-- built-in choices to the full LSM catalog. If absent, the 4 built-ins work.
+
+function lib:GetLSM()
+  if not self._lsm then
+    self._lsm = LibStub("LibSharedMedia-3.0", true) or false
+  end
+  return self._lsm or nil
+end
+
+function lib:HasSharedMedia()
+  return self:GetLSM() ~= nil
+end
+
+function lib:GetFontList()
+  local lsm = self:GetLSM()
+  if lsm then
+    local names = lsm:List("font")
+    local list = {}
+    for _, name in ipairs(names) do
+      list[#list + 1] = { key = name, label = name, path = lsm:Fetch("font", name) }
+    end
+    return list
+  end
+  local list = {}
+  local order = { "default", "arial", "morpheus", "skurri" }
+  for _, k in ipairs(order) do
+    local f = self.FontFamilies[k]
+    list[#list + 1] = { key = k, label = f.label, path = f.path }
+  end
+  return list
+end
+
+function lib:GetFontPath(key)
+  local lsm = self:GetLSM()
+  if lsm then
+    local path = lsm:Fetch("font", key)
+    if path then return path end
+  end
+  local fam = self.FontFamilies[key]
+  return fam and fam.path or self.FontFamilies.default.path
+end
+
+function lib:GetSoundList()
+  local lsm = self:GetLSM()
+  if lsm then
+    local names = lsm:List("sound")
+    local list = {}
+    for _, name in ipairs(names) do
+      list[#list + 1] = { key = name, label = name, path = lsm:Fetch("sound", name) }
+    end
+    return list
+  end
+  return self._builtinSounds or {}
+end
+
+-- Built-in alert sounds (available even without LSM)
+lib._builtinSounds = {
+  { key = "auction",  label = "Auction",  soundID = SOUNDKIT.AUCTION_WINDOW_OPEN },
+  { key = "levelup",  label = "Level Up", soundID = SOUNDKIT.LEVEL_UP },
+  { key = "ready",    label = "Ready Check", soundID = SOUNDKIT.READY_CHECK },
+  { key = "warning",  label = "Raid Warning", soundID = SOUNDKIT.RAID_WARNING },
+  { key = "coin",     label = "Coin",     soundID = SOUNDKIT.LOOT_WINDOW_COIN_SOUND },
+  { key = "quest",    label = "Quest Complete", soundID = SOUNDKIT.UI_QUEST_ROLLING_FORWARD_01 },
+}
+
+function lib:PlayAlert(key)
+  local lsm = self:GetLSM()
+  if lsm then
+    local path = lsm:Fetch("sound", key)
+    if path then PlaySoundFile(path, "Master"); return true end
+  end
+  for _, s in ipairs(self._builtinSounds) do
+    if s.key == key and s.soundID then
+      PlaySound(s.soundID, "Master"); return true
+    end
+  end
+  return false
+end
+
+-- ============================================================================
 -- Settings
 -- ============================================================================
 -- Suite-wide settings with defaults. The standalone addon persists these in
@@ -253,9 +472,10 @@ end
 -- lib.settings at startup. Changing a setting fires SettingsChanged.
 
 local SETTING_DEFAULTS = {
-  fontScale  = 1.0,      -- 0.8 .. 1.4
-  uiScale    = 1.0,      -- 0.8 .. 1.4
-  fontFamily = "default", -- key into lib.FontFamilies
+  fontScale  = 1.0,        -- 0.8 .. 1.4
+  uiScale    = 1.0,        -- 0.8 .. 1.4
+  fontFamily = "default",  -- key into lib.FontFamilies or LSM font name
+  theme      = "Cogworks", -- active theme name
 }
 
 lib.FontFamilies = {
@@ -288,6 +508,24 @@ function lib:ApplySettingsTable(tbl)
     if SETTING_DEFAULTS[k] ~= nil then
       self.settings[k] = v
     end
+  end
+  if tbl.customThemes then
+    for name, data in pairs(tbl.customThemes) do
+      self.CustomThemes[name] = data
+    end
+  end
+  if tbl.themeOverrides then
+    for _, k in ipairs(THEME_KEYS) do
+      if tbl.themeOverrides[k] then
+        local c = tbl.themeOverrides[k]
+        if self.Theme[k] then
+          self.Theme[k][1], self.Theme[k][2] = c[1], c[2]
+          self.Theme[k][3], self.Theme[k][4] = c[3], c[4] or 1
+        end
+      end
+    end
+  elseif self.settings.theme and self.settings.theme ~= "Cogworks" then
+    self:SetTheme(self.settings.theme)
   end
   self:UpdateFonts()
 end
@@ -327,8 +565,7 @@ function lib:UpdateFonts()
   local scale = self.settings.fontScale or 1.0
   scale = math.max(0.8, math.min(1.4, scale))
   local familyKey = self.settings.fontFamily or "default"
-  local family = self.FontFamilies[familyKey] or self.FontFamilies.default
-  local fontPath = family.path
+  local fontPath = self:GetFontPath(familyKey)
   for key, def in pairs(FONT_DEFS) do
     local fo = ensureFontObject(key, def)
     local _, _, flags = fo:GetFont()
@@ -675,6 +912,8 @@ function lib:CreateCheckbox(parent, label, description, initialValue, onChange)
   cb.label:SetTextColor(unpack(T.text))
 
   if description and description ~= "" then
+    cb.description = cb:CreateFontString(nil, "OVERLAY")
+    cb.description:SetFontObject(self.Fonts.small)
     cb.description:SetPoint("TOPLEFT", cb.label, "BOTTOMLEFT", 0, -2)
     cb.description:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
     cb.description:SetJustifyH("LEFT")
@@ -812,10 +1051,17 @@ function lib:CreateNavButton(parent, navItem, onClick)
   end
 
   btn:SetScript("OnEnter", function(b)
-    b.bg:SetColorTexture(1, 1, 1, 0.06)
+    b.bg:SetColorTexture(1, 1, 1, 0.08)
+    b.label:SetTextColor(unpack(T.text))
   end)
   btn:SetScript("OnLeave", function(b)
-    if not b.active then b.bg:SetColorTexture(1, 1, 1, 0) end
+    if b.active then
+      b.bg:SetColorTexture(1, 1, 1, 0.06)
+      b.label:SetTextColor(unpack(T.text))
+    else
+      b.bg:SetColorTexture(1, 1, 1, 0)
+      b.label:SetTextColor(unpack(T.textDim))
+    end
   end)
 
   if onClick then btn:SetScript("OnClick", onClick) end
@@ -837,6 +1083,193 @@ function lib:SetNavButtonActive(btn, isActive)
     btn.bg:SetColorTexture(1, 1, 1, 0)
     if btn.icon then btn.icon:SetDesaturated(true) end
   end
+end
+
+-- ============================================================================
+-- Dropdown
+-- ============================================================================
+-- A themed dropdown selector. Items is a list of {key, label} tables.
+-- onChange(key, label) fires when the user picks a new value.
+
+function lib:CreateDropdown(parent, items, selectedKey, onChange)
+  local T = self.Theme
+  local dd = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+  dd:SetSize(200, 26)
+  dd:SetBackdrop(self.BackdropSmall)
+  dd:SetBackdropColor(0.15, 0.15, 0.2, 1)
+  dd:SetBackdropBorderColor(unpack(T.border))
+
+  dd.selected = dd:CreateFontString(nil, "OVERLAY")
+  dd.selected:SetFontObject(self.Fonts.normal)
+  dd.selected:SetPoint("LEFT", dd, "LEFT", 8, 0)
+  dd.selected:SetPoint("RIGHT", dd, "RIGHT", -20, 0)
+  dd.selected:SetJustifyH("LEFT")
+  dd.selected:SetWordWrap(false)
+
+  dd.arrow = dd:CreateFontString(nil, "OVERLAY")
+  dd.arrow:SetFontObject(self.Fonts.small)
+  dd.arrow:SetPoint("RIGHT", dd, "RIGHT", -6, 0)
+  dd.arrow:SetText("v")
+  dd.arrow:SetTextColor(unpack(T.textDim))
+
+  dd._items = items or {}
+  dd._selectedKey = selectedKey
+  dd._onChange = onChange
+
+  local function updateLabel()
+    for _, item in ipairs(dd._items) do
+      if item.key == dd._selectedKey then
+        dd.selected:SetText(item.label)
+        dd.selected:SetTextColor(unpack(T.text))
+        return
+      end
+    end
+    dd.selected:SetText(dd._selectedKey or "Select...")
+    dd.selected:SetTextColor(unpack(T.textDim))
+  end
+  updateLabel()
+
+  -- Menu frame (created once, reused)
+  local menu = CreateFrame("Frame", nil, dd, "BackdropTemplate")
+  menu:SetBackdrop(self.Backdrop)
+  menu:SetBackdropColor(T.bg[1], T.bg[2], T.bg[3], 0.98)
+  menu:SetBackdropBorderColor(unpack(T.border))
+  menu:SetFrameStrata("FULLSCREEN_DIALOG")
+  menu:SetClampedToScreen(true)
+  menu:Hide()
+
+  local menuScroll = CreateFrame("ScrollFrame", nil, menu)
+  menuScroll:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4)
+  menuScroll:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -4, 4)
+  local menuContent = CreateFrame("Frame", nil, menuScroll)
+  menuContent:SetWidth(1)
+  menuContent:SetHeight(1)
+  menuScroll:SetScrollChild(menuContent)
+  menuScroll:EnableMouseWheel(true)
+  menuScroll:SetScript("OnMouseWheel", function(sf, delta)
+    local range = math.max(0, menuContent:GetHeight() - sf:GetHeight())
+    local cur = sf:GetVerticalScroll()
+    sf:SetVerticalScroll(math.max(0, math.min(range, cur - delta * 20)))
+  end)
+
+  local menuRows = {}
+  local _fontObjects = {}
+
+  local function getItemFontObject(item)
+    if not item.fontPath then return lib.Fonts.normal end
+    local foKey = item.fontPath
+    if not _fontObjects[foKey] then
+      local fo = CreateFont("CogworksDDFont_" .. (#_fontObjects + 1))
+      fo:CopyFontObject(lib.Fonts.normal)
+      local _, size, flags = fo:GetFont()
+      fo:SetFont(item.fontPath, size, flags or "")
+      _fontObjects[foKey] = fo
+    end
+    return _fontObjects[foKey]
+  end
+
+  local function buildMenu()
+    for _, r in ipairs(menuRows) do r:Hide() end
+    local itemH = 22
+    local maxVisible = 14
+    local count = #dd._items
+    local visCount = math.min(count, maxVisible)
+    local menuW = math.max(dd:GetWidth(), 260)
+    local menuH = visCount * itemH + 8
+
+    menu:SetSize(menuW, menuH)
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", dd, "BOTTOMLEFT", 0, -2)
+    menuContent:SetWidth(menuW - 8)
+    menuContent:SetHeight(count * itemH)
+    menuScroll:SetVerticalScroll(0)
+
+    for i, item in ipairs(dd._items) do
+      local row = menuRows[i]
+      if not row then
+        row = CreateFrame("Button", nil, menuContent)
+        row:SetHeight(itemH)
+        row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.bg:SetAllPoints()
+        row.bg:SetColorTexture(1, 1, 1, 0)
+        row.label = row:CreateFontString(nil, "OVERLAY")
+        row.label:SetPoint("LEFT", row, "LEFT", 6, 0)
+        row.label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        row.label:SetJustifyH("LEFT")
+        row.label:SetWordWrap(false)
+        row:SetScript("OnEnter", function(r) r.bg:SetColorTexture(unpack(T.rowHover)) end)
+        row:SetScript("OnLeave", function(r) r.bg:SetColorTexture(1, 1, 1, 0) end)
+        menuRows[i] = row
+      end
+      row:SetPoint("TOPLEFT", menuContent, "TOPLEFT", 0, -(i-1) * itemH)
+      row:SetPoint("RIGHT", menuContent, "RIGHT", 0, 0)
+      row.label:SetFontObject(getItemFontObject(item))
+      row.label:SetText(item.label)
+      if item.key == dd._selectedKey then
+        row.label:SetTextColor(T.gold[1], T.gold[2], T.gold[3])
+      else
+        row.label:SetTextColor(unpack(T.text))
+      end
+      row:SetScript("OnClick", function()
+        dd._selectedKey = item.key
+        updateLabel()
+        menu:Hide()
+        if dd._onChange then dd._onChange(item.key, item.label) end
+      end)
+      row:Show()
+    end
+  end
+
+  -- Click to toggle (not hold)
+  dd:EnableMouse(true)
+  dd:SetScript("OnMouseUp", function()
+    if menu:IsShown() then
+      menu:Hide()
+    else
+      buildMenu()
+      menu:Show()
+      menu._openTime = GetTime()
+    end
+  end)
+  dd:SetScript("OnEnter", function(d)
+    d:SetBackdropBorderColor(unpack(T.gold))
+  end)
+  dd:SetScript("OnLeave", function(d)
+    if not menu:IsShown() then
+      d:SetBackdropBorderColor(unpack(T.border))
+    end
+  end)
+
+  -- Close menu when mouse leaves both dropdown and menu
+  menu:SetScript("OnShow", function()
+    menu._openTime = GetTime()
+    menu:SetScript("OnUpdate", function()
+      if (GetTime() - (menu._openTime or 0)) < 0.3 then return end
+      if not dd:IsMouseOver() and not menu:IsMouseOver() then
+        menu:Hide()
+        dd:SetBackdropBorderColor(unpack(T.border))
+      end
+    end)
+  end)
+  menu:SetScript("OnHide", function()
+    menu:SetScript("OnUpdate", nil)
+  end)
+
+  function dd:SetItems(newItems)
+    dd._items = newItems
+    updateLabel()
+  end
+
+  function dd:SetSelectedKey(key)
+    dd._selectedKey = key
+    updateLabel()
+  end
+
+  function dd:GetSelectedKey()
+    return dd._selectedKey
+  end
+
+  return dd
 end
 
 -- ============================================================================
@@ -1007,41 +1440,79 @@ function ScrollTableMixin:BuildHeader(parent)
 end
 
 function ScrollTableMixin:BuildScrollArea(parent)
-  self.scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+  local T = lib.Theme
+  self.scrollFrame = CreateFrame("ScrollFrame", nil, parent)
   self.scrollFrame:SetPoint("TOPLEFT", self.headerFrame, "BOTTOMLEFT", 0, 0)
-  self.scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
+  self.scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -10, 0)
 
   self.content = CreateFrame("Frame", nil, self.scrollFrame)
   self.content:SetWidth(self.scrollFrame:GetWidth())
   self.content:SetHeight(1)
   self.scrollFrame:SetScrollChild(self.content)
 
-  self.scrollBar = self.scrollFrame.ScrollBar
-  if not self.scrollBar then
-    for _, child in ipairs({self.scrollFrame:GetChildren()}) do
-      if child and child.GetObjectType and child:GetObjectType() == "Slider" then
-        self.scrollBar = child; break
-      end
-    end
-  end
+  -- Thin themed scrollbar thumb
+  local track = CreateFrame("Frame", nil, parent)
+  track:SetWidth(6)
+  track:SetPoint("TOPLEFT", self.scrollFrame, "TOPRIGHT", 2, 0)
+  track:SetPoint("BOTTOMLEFT", self.scrollFrame, "BOTTOMRIGHT", 2, 0)
+  local trackBg = track:CreateTexture(nil, "BACKGROUND")
+  trackBg:SetAllPoints()
+  trackBg:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.15)
+  self._track = track
+
+  local thumb = CreateFrame("Frame", nil, track)
+  thumb:SetWidth(6)
+  thumb:SetHeight(40)
+  thumb:SetPoint("TOP", track, "TOP", 0, 0)
+  local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
+  thumbTex:SetAllPoints()
+  thumbTex:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.5)
+  self._thumb = thumb
+  self._thumbTex = thumbTex
+
+  -- Mousewheel scrolling
+  local tbl = self
+  self.scrollFrame:EnableMouseWheel(true)
+  self.scrollFrame:SetScript("OnMouseWheel", function(sf, delta)
+    local cur = sf:GetVerticalScroll()
+    local range = tbl:GetScrollRange()
+    local step = ST_ROW_HEIGHT * 3
+    local newVal = math.max(0, math.min(range, cur - delta * step))
+    sf:SetVerticalScroll(newVal)
+    tbl:UpdateThumb()
+  end)
 
   self.scrollFrame:SetScript("OnSizeChanged", function(sf, w)
     self.content:SetWidth(w)
-    self:UpdateScrollBarVisibility()
+    tbl:UpdateThumb()
   end)
-  self.scrollFrame:HookScript("OnScrollRangeChanged", function()
-    self:UpdateScrollBarVisibility()
-  end)
+
+  track:Hide()
 end
 
-function ScrollTableMixin:UpdateScrollBarVisibility()
-  if not self.scrollBar then return end
-  local range = self.scrollFrame:GetVerticalScrollRange()
-  if range and range <= 0.5 then
-    self.scrollBar:SetAlpha(0); self.scrollBar:EnableMouse(false)
-  else
-    self.scrollBar:SetAlpha(1); self.scrollBar:EnableMouse(true)
+function ScrollTableMixin:GetScrollRange()
+  local contentH = self.content:GetHeight()
+  local viewH = self.scrollFrame:GetHeight()
+  return math.max(0, contentH - viewH)
+end
+
+function ScrollTableMixin:UpdateThumb()
+  local range = self:GetScrollRange()
+  if range <= 0.5 then
+    self._track:Hide()
+    return
   end
+  self._track:Show()
+  local trackH = self._track:GetHeight()
+  local viewH = self.scrollFrame:GetHeight()
+  local contentH = self.content:GetHeight()
+  local thumbH = math.max(20, trackH * (viewH / contentH))
+  self._thumb:SetHeight(thumbH)
+  local cur = self.scrollFrame:GetVerticalScroll()
+  local frac = cur / range
+  local travel = trackH - thumbH
+  self._thumb:ClearAllPoints()
+  self._thumb:SetPoint("TOP", self._track, "TOP", 0, -frac * travel)
 end
 
 function ScrollTableMixin:UpdateHeaderArrows()
@@ -1221,10 +1692,8 @@ function ScrollTableMixin:Render()
   end
 
   self.content:SetHeight(math.max(1, #self.data * ST_ROW_HEIGHT))
-  if self.scrollFrame.UpdateScrollChildRect then
-    self.scrollFrame:UpdateScrollChildRect()
-  end
-  self:UpdateScrollBarVisibility()
+  self.scrollFrame:SetVerticalScroll(0)
+  self:UpdateThumb()
 end
 
 function ScrollTableMixin:SetOnRowClick(fn) self.onRowClick = fn end
