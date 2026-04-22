@@ -19,3 +19,4 @@ ignore:
   - .github
   - docs
   - feedback
+  - Art/inner

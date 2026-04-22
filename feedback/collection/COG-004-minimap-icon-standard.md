@@ -37,6 +37,10 @@ Shared failure modes:
 
 - **2026-04-21**: Problem catalogued. Design standard proposed (see Notes). No icon revisions authored yet — awaiting the user to generate and iterate.
 
+- **2026-04-21**: **v1 candidates received** — user generated all five inner icons as PNG: `cw-inner.png`, `fq-inner.png`, `tm-inner.png`, `mc-inner.png`, `tl-inner.png`. Sourced into `cogworks/Art/inner/` (added to `.pkgmeta` ignore — source-only, not shipped). Visual evaluation: **all five pass the squint test**. Bold sans-serif letters, flat solid backgrounds, consistent design system (same composition / weight / padding across the family). Foreground/background pairs per spec with one small drift: CW background reads as warm brown rather than the spec'd deep brass `#3A2A0A` — distinctive and arguably better for the "suite hub" feel, keep as-is. TM and TL both use navy backgrounds but distinct foreground hues (violet vs teal) keep them side-by-side distinguishable. Transparent outer area is clean — will layer inside COG-003's gear-border with no ring/disc color clash.
+
+- **2026-04-21**: **Remaining gap before in-game integration**: PNG → TGA (or BLP) conversion. WoW client does not load PNG as a texture. Conversion produces `<cog>-inner.tga` files that go into each cog's own `Art/` directory (distribution step deferred to a follow-up pass).
+
 ## Notes
 
 ### Design principles (the readability bar)
