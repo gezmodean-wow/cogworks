@@ -41,6 +41,14 @@ Shared failure modes:
 
 - **2026-04-21**: **Remaining gap before in-game integration**: PNG → TGA (or BLP) conversion. WoW client does not load PNG as a texture. Conversion produces `<cog>-inner.tga` files that go into each cog's own `Art/` directory (distribution step deferred to a follow-up pass).
 
+- **2026-04-21**: **v1 TGAs received and distributed.** User converted all five PNG sources to TGA (30–45 KB each, ~95% compression from the ~1 MB PNG sources). Valid TRUEVISION-XFILE headers confirmed. Source archive stays at `cogworks/Art/inner/*.tga` (alongside the PNG masters; both gitignored from packaging via `.pkgmeta` ignore). Ship-ready copies distributed to each cog's own `Art/` folder:
+  - `cogworks/Art/cw-inner.tga`
+  - `flipqueue/Art/fq-inner.tga`
+  - `tempo/Art/tm-inner.tga`
+  - `maxcraft/Art/mc-inner.tga`
+  - `tally/Art/tl-inner.tga` (new `tally/Art/` dir created)
+  The distributed TGAs ship at `Interface\AddOns\<Cog>\Art\<cog>-inner.tga` in each cog's package. **Still unreferenced by code** — no behavior change until each cog's icon-registration call points at the new TGA (pending the COG-003 `RegisterCogMinimapButton` wrapper).
+
 ## Notes
 
 ### Design principles (the readability bar)
