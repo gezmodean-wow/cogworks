@@ -49,6 +49,8 @@ Desired state:
   - **AddonCompartmentFrame support** (LibDBIcon lines 312, 637): modern users increasingly pin addon icons to Blizzard's compartment dropdown rather than the minimap itself. The compartment uses only the inner icon (no border), so our gear-ring doesn't apply there. No work needed — compartment flow passes through LibDBIcon's existing path intact. But worth knowing: our branding doesn't reach compartment users; they'll still see a normal icon list. If important, consider a future sub-issue for compartment-specific branding (e.g. prefixing the entry text with "⚙ " or similar).
   - **Existing `SetButtonBackground`** (line 549) is also available if we want to customize the backdrop disc *behind* the icon — could be used to paint a subtle brass-gold tone to reinforce the gear aesthetic without changing the border shape. Consider for v2.
 
+- **2026-04-21**: **Gear texture asset received** and placed at `C:/src/cogworks/Art/CogBorder.tga` (128×128, TGA, ~26 KB RLE-compressed). Sourced from `C:/Users/gezmo/Downloads/gear.tga`. Art dir created at repo root. `.pkgmeta` ignore list does not include `Art/`, so the TGA will ship in the packager output as `Interface\AddOns\Cogworks\Art\CogBorder.tga`. File sits unused in the package until the `RegisterCogMinimapButton` wrapper references it — shipping the asset alone is a no-op for users' current behavior.
+
 ## Notes
 
 ### Investigation questions (drive the first Attempts entry)
