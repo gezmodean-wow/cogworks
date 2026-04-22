@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 5
+local MAJOR, MINOR = "Cogworks-1.0", 6
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -28,7 +28,7 @@ oldminor = oldminor or 0
 -- Version
 -- ============================================================================
 
-lib.version      = "0.5.0"   -- human-facing semver of the Cogworks suite
+lib.version      = "0.6.0"   -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -462,6 +462,49 @@ function lib:PlayAlert(key)
     end
   end
   return false
+end
+
+-- ============================================================================
+-- Minimap button — shared gear-bordered chrome
+-- ============================================================================
+-- Wraps LibDBIcon:Register with the suite's gear-ring border texture so all
+-- Chronoforge cogs get a consistent minimap identity. LibDBIcon's
+-- SetButtonBorder API swaps the default circular tracking border for our
+-- gear. The dataobject's icon continues to provide the per-cog inner glyph.
+--
+-- Usage (from a cog's entry Lua):
+--   local Cogworks = LibStub("Cogworks-1.0", true)
+--   if Cogworks and Cogworks.RegisterCogMinimapButton then
+--     local dataobj = LibStub("LibDataBroker-1.1"):NewDataObject(addonName, {
+--       type = "launcher",
+--       icon = "Interface\\AddOns\\FlipQueue\\Art\\fq-inner",
+--       OnClick       = function(self, button) --[[ open UI ]] end,
+--       OnTooltipShow = function(tt) tt:SetText(addonName) end,
+--     })
+--     FlipQueueDB.minimap = FlipQueueDB.minimap or { hide = false }
+--     Cogworks:RegisterCogMinimapButton(addonName, dataobj, FlipQueueDB.minimap)
+--   end
+
+local COG_BORDER_TEXTURE = "Interface\\AddOns\\Cogworks\\Art\\CogBorder"
+local COG_BORDER_SIZE = 50
+
+function lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)
+  local LDBIcon = LibStub("LibDBIcon-1.0", true)
+  if not LDBIcon then
+    self:PrintError(addonName, "LibDBIcon-1.0 required for Cogworks minimap button")
+    return false
+  end
+
+  LDBIcon:Register(addonName, dataobject, savedvars)
+  LDBIcon:SetButtonBorder(
+    addonName,
+    COG_BORDER_TEXTURE,
+    COG_BORDER_SIZE,
+    "TOPLEFT",
+    0, 0
+  )
+
+  return true
 end
 
 -- ============================================================================

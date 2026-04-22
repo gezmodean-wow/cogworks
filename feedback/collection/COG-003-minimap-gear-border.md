@@ -51,6 +51,8 @@ Desired state:
 
 - **2026-04-21**: **Gear texture asset received** and placed at `C:/src/cogworks/Art/CogBorder.tga` (128×128, TGA, ~26 KB RLE-compressed). Sourced from `C:/Users/gezmo/Downloads/gear.tga`. Art dir created at repo root. `.pkgmeta` ignore list does not include `Art/`, so the TGA will ship in the packager output as `Interface\AddOns\Cogworks\Art\CogBorder.tga`. File sits unused in the package until the `RegisterCogMinimapButton` wrapper references it — shipping the asset alone is a no-op for users' current behavior.
 
+- **2026-04-21**: **Wrapper landed** in `Cogworks-1.0/Cogworks-1.0.lua` as `lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)`. Inserted as its own section between the LibSharedMedia bridge and Settings. Implementation: `LibDBIcon:Register` followed by `LibDBIcon:SetButtonBorder(addonName, "Interface\\AddOns\\Cogworks\\Art\\CogBorder", 50, "TOPLEFT", 0, 0)`. Guards for LibDBIcon absence via `self:PrintError` + false return. `MINOR` bumped 5 → 6, `lib.version` bumped 0.5.0 → 0.6.0. Shipped as cogworks v0.6.0. COG-003 library-side work is complete; per-cog Core.lua rewires (FlipQueue canary first) is the remaining rollout.
+
 ## Notes
 
 ### Investigation questions (drive the first Attempts entry)

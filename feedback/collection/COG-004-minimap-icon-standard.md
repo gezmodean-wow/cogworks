@@ -49,6 +49,8 @@ Shared failure modes:
   - `tally/Art/tl-inner.tga` (new `tally/Art/` dir created)
   The distributed TGAs ship at `Interface\AddOns\<Cog>\Art\<cog>-inner.tga` in each cog's package. **Still unreferenced by code** — no behavior change until each cog's icon-registration call points at the new TGA (pending the COG-003 `RegisterCogMinimapButton` wrapper).
 
+- **2026-04-21**: **COG-003 wrapper shipped** as cogworks v0.6.0 — `lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)` is now available to consuming cogs. Per-cog rollout unblocked: FlipQueue canary first, then Tempo, then Maxcraft. Each cog's `Core.lua` minimap block updates to call `Cogworks:RegisterCogMinimapButton` passing `icon = "Interface\\AddOns\\<Cog>\\Art\\<cog>-inner"` as the dataobject icon path. When a cog ships its first release using the new wrapper, both COG-003 (gear border) AND COG-004 (inner icon) go live in the same visual change.
+
 ## Notes
 
 ### Design principles (the readability bar)
