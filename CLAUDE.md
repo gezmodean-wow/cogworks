@@ -57,26 +57,23 @@ cogworks/
 
 ## Feedback tracking
 
-Player feedback (from the Chronoforge Discord), bug reports, and internal observations are tracked as `.md` files in per-cog `feedback/` directories. Cogworks-library-level issues live in `C:/src/cogworks/feedback/`; per-cog issues live in each cog's own `feedback/`. Schema, lifecycle, and ID format are documented in `~/.chronoforge/CONVENTIONS.md`. Cog → path → idPrefix mapping lives in `~/.chronoforge/config.json`.
+**GitHub is canonical.** Issues live at https://github.com/gezmodean-wow/cogworks/issues — this is the single source of truth for bugs, feature requests, and engineering discussion. The `scribe` bot (deployed on Railway, source at `C:/src/scribe`) mirrors Discord forum activity into GitHub issues automatically and broadcasts engineering comments back to the Discord thread.
 
-Structure per repo:
+When shipping a fix for a tracked issue, post the engineering note as a comment on the GitHub issue via `gh issue comment <number> --repo gezmodean-wow/cogworks --body "..."`. Don't update Discord directly — scribe handles propagation.
 
-```
-feedback/
-├── _TEMPLATE.md
-├── collection/   # phase 1 — still gathering info
-├── releases/     # phase 2 — scoped to a target version
-│   └── v<X.Y.Z>/
-└── archive/      # shipped, wontfix, duplicate
-```
-
-Slash commands (user-scoped, available from any session): `/feedback-scan`, `/feedback-ingest`, `/feedback-capture`, `/feedback-refresh`, `/feedback-promote`, `/feedback-status`, `/feedback-note`, `/cog-init`.
+Cogworks issue IDs use the prefix `COG` (e.g. `COG-001`). The GitHub issue number is the canonical identifier; the `COG-N` ID is for commit-message convenience.
 
 ### Proactive capture
 
-When the user mentions a bug, regression, feature idea, or improvement during normal work, offer to log it via `/feedback-capture` — search for related existing entries first, then augment or create. Don't write a feedback file unprompted; ask first. Similarly, when shipping a fix or trying an approach to resolve a tracked issue, offer to append to its Attempts log via `/feedback-note`.
+When the user mentions a bug, regression, feature idea, or improvement during normal work, offer to file or update the GitHub issue. Don't open issues unprompted; ask first. When shipping a fix for a tracked issue, offer to post a status comment to the GitHub issue.
 
 Commit messages referencing a tracked issue should use `<type>(<ID>): <subject>` — e.g. `fix(COG-004): guard RegisterAddon against nil namespace`.
+
+## Cross-cog feature requests
+
+Cogworks is a shared library, so it's the **most common target** for cross-cog asks: when an agent working in FlipQueue / Tempo / Maxcraft / Tally spots a gap they need filled here, they file an Issue on `gezmodean-wow/cogworks` and mention their cog as the source. Triage those as cross-cog asks — they're a real signal that a library capability is missing.
+
+The reverse direction also applies: if you spot a gap in a sibling cog while working here in Cogworks, file a GitHub Issue on that cog's tracker via `gh issue create --repo gezmodean-wow/<target-cog>`, mentioning Cogworks as the source. Scribe mirrors all such issues to the target cog's Discord forum.
 
 ## When adding new library features
 
