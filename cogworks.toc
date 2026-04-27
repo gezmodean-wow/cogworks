@@ -12,7 +12,7 @@
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 
-Cogworks-1.0\Cogworks-1.0.lua
+Cogworks-1.0\Cogworks-1.0.xml
 
 Standalone\Standalone.lua
 Standalone\UIShowcase.lua

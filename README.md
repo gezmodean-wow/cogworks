@@ -21,6 +21,8 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 - **Character-key helpers** — canonical `"Name-RealmNormalized"` keys that match Syndicator's convention so cogworks data and Syndicator data can be cross-referenced without a translation layer
 - **Addon registry** — each cog registers itself on load; any cog can enumerate its installed siblings for About panels or cross-promotion
 - **Syndicator bridge** — a capability detector so cogs that consume Syndicator share one code path
+- **Item helpers** (`Items.lua`) — `MakeItemKey`, `ParseItemLink`, `ItemKeyToItemString`, `ResolveItemID`, `ItemsMatch` — one canonical `"itemID;bonusIDs;modifiers"` key shape and a 4-tier matcher so FlipQueue / Tally / future cogs never silently diverge on what counts as the same item
+- **Realm helpers** (`Realms.lua`) — `NormalizeAccents`, `NormalizeRealmKey`, `RealmMatches`, `RealmsOverlap` — accent-insensitive Latin normalization and connected-realm group matching for cross-character / cross-realm rollups
 - **Print helpers** — branded per-cog chat prefixes
 
 ## Suite members
