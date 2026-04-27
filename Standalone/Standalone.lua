@@ -70,6 +70,11 @@ local function CmdMain(msg)
     return
   end
 
+  if msg == "console" then
+    ns:ToggleConsole()
+    return
+  end
+
   if msg == "events" then
     cw:Print("Cogworks", "Known events:")
     local names = {}
@@ -100,6 +105,7 @@ local function CmdMain(msg)
     cw:Print("Cogworks", "Commands:")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/cogworks|r              show status")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/cogworks ui|r           toggle UI showcase")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/cogworks console|r      toggle Lua dev console")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/cogworks events|r       list known event names")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/cogworks fire <ev>|r    fire an event for testing")
     DEFAULT_CHAT_FRAME:AddMessage("  |cffffd100/cogworks help|r         this message")

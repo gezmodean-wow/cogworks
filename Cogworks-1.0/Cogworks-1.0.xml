@@ -14,5 +14,6 @@
     <Script file="Cogworks-1.0.lua" />
     <Script file="Items.lua" />
     <Script file="Realms.lua" />
+    <Script file="API.lua" />
 
 </Ui>

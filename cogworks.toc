@@ -16,3 +16,4 @@ Cogworks-1.0\Cogworks-1.0.xml
 
 Standalone\Standalone.lua
 Standalone\UIShowcase.lua
+Standalone\Console.lua

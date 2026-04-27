@@ -23,6 +23,7 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 - **Syndicator bridge** — a capability detector so cogs that consume Syndicator share one code path
 - **Item helpers** (`Items.lua`) — `MakeItemKey`, `ParseItemLink`, `ItemKeyToItemString`, `ResolveItemID`, `ItemsMatch` — one canonical `"itemID;bonusIDs;modifiers"` key shape and a 4-tier matcher so FlipQueue / Tally / future cogs never silently diverge on what counts as the same item
 - **Realm helpers** (`Realms.lua`) — `NormalizeAccents`, `NormalizeRealmKey`, `RealmMatches`, `RealmsOverlap` — accent-insensitive Latin normalization and connected-realm group matching for cross-character / cross-realm rollups
+- **Public-API registry** (`API.lua`) — `RegisterAPI`, `GetAPI`, `WhenAPIReady`, `GetRegisteredAPIs` — versioned cross-cog API contracts so a producer cog can publish a typed surface (e.g. Tally's `GetItemResearch`) and consumers can negotiate `major.minor` compatibility, with multi-major coexistence for transition windows
 - **Print helpers** — branded per-cog chat prefixes
 
 ## Suite members
