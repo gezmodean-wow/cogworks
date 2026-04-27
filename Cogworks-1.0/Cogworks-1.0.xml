@@ -15,5 +15,6 @@
     <Script file="Items.lua" />
     <Script file="Realms.lua" />
     <Script file="API.lua" />
+    <Script file="Sections.lua" />
 
 </Ui>

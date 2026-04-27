@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 8
+local MAJOR, MINOR = "Cogworks-1.0", 9
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -28,7 +28,7 @@ oldminor = oldminor or 0
 -- Version
 -- ============================================================================
 
-lib.version      = "0.8.0"   -- human-facing semver of the Cogworks suite
+lib.version      = "0.9.0"   -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
