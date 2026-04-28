@@ -748,12 +748,13 @@ lib.SuiteRoster = {
 
 local GEAR_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_Gear_01"
 
--- Sizes are tuned so the gear-tooth ring (CogBorder) reads cleanly and the
--- inner glyph fills roughly 60% of the ring (matching the minimap-button
--- proportions of a 32px button inside a 53px tracking border).
-local HUB_RING_SIZE,  HUB_INNER_SIZE  = 64, 38
-local CORE_RING_SIZE, CORE_INNER_SIZE = 56, 34
-local EDGE_RING_SIZE, EDGE_INNER_SIZE = 44, 26
+-- Sizes are tuned so the inner glyph reaches the inner edge of the gear
+-- ring with no visible gap. The first pass used the 32/53 minimap ratio
+-- (~0.60) but in-game the gear hole reads bigger than the tracking-border
+-- hole — going up to ~0.82 closes the gap on every size tier.
+local HUB_RING_SIZE,  HUB_INNER_SIZE  = 64, 52
+local CORE_RING_SIZE, CORE_INNER_SIZE = 56, 46
+local EDGE_RING_SIZE, EDGE_INNER_SIZE = 44, 36
 
 -- Spin periods. Meshed gears must counter-rotate at speeds proportional to
 -- their tooth count (~ ring radius) so tooth velocity matches at the contact
