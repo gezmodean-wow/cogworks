@@ -19,10 +19,17 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 11
+-- The addonName whose .toc included this file. Used by libArtPath so bundled
+-- art (CogBorder, inner glyphs) resolves whether Cogworks is loaded standalone
+-- or embedded under a consumer's Libs/. The first cog to load Cogworks wins;
+-- because every consumer ships the same external, the path resolves either way.
+local LIB_LOADER_ADDON = ...
+
+local MAJOR, MINOR = "Cogworks-1.0", 12
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
+lib.loaderAddon = lib.loaderAddon or LIB_LOADER_ADDON
 
 -- ============================================================================
 -- Version
@@ -497,13 +504,19 @@ local COG_BORDER_SIZE = 53
 local TRACKING_BORDER_FILE_ID = 136430
 local TRACKING_BORDER_PATH    = "Interface\\Minimap\\MiniMap-TrackingBorder"
 
-local function gearBorderPath(addonName)
-  -- Standalone Cogworks: art lives at Cogworks/Cogworks-1.0/Art/.
-  -- Embedded consumers: <consumer>/Libs/Cogworks-1.0/Art/.
-  if addonName == "Cogworks" then
-    return "Interface\\AddOns\\Cogworks\\Cogworks-1.0\\Art\\CogBorder"
+-- Resolve a path to a TGA shipped inside Cogworks-1.0/Art/. The standalone
+-- Cogworks addon has no Libs\ wrapper around the lib subfolder; consumers do.
+-- callerAddon defaults to whichever addon's TOC loaded the lib (lib.loaderAddon).
+local function libArtPath(callerAddon, relPath)
+  callerAddon = callerAddon or lib.loaderAddon or "Cogworks"
+  if callerAddon == "Cogworks" then
+    return string.format("Interface\\AddOns\\Cogworks\\Cogworks-1.0\\Art\\%s", relPath)
   end
-  return string.format("Interface\\AddOns\\%s\\Libs\\Cogworks-1.0\\Art\\CogBorder", addonName)
+  return string.format("Interface\\AddOns\\%s\\Libs\\Cogworks-1.0\\Art\\%s", callerAddon, relPath)
+end
+
+local function gearBorderPath(addonName)
+  return libArtPath(addonName, "CogBorder")
 end
 
 function lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)
@@ -666,100 +679,160 @@ lib:UpdateFonts()
 -- assembly widget to show installed vs. missing members regardless of which
 -- cogs are loaded in the current session.
 
+-- Each entry's `innerIcon` names a TGA bundled in Cogworks-1.0/Art/inner/, so
+-- the gear assembly can render the suite even when consumer cogs aren't
+-- installed. Resolved at runtime via libArtPath. `cluster` describes how the
+-- entry sits in cluster mode: "core" = mesh-engaged with the hub,
+-- "edge" = floating, "hub" = the central piece.
 lib.SuiteRoster = {
   {
-    name    = "Cogworks",
-    role    = "Shared core library",
-    icon    = "Interface\\Icons\\INV_Misc_Gear_01",
-    central = true,
+    name      = "Cogworks",
+    role      = "Shared core library",
+    innerIcon = "cw-inner",
+    central   = true,
+    cluster   = "hub",
   },
   {
-    name    = "FlipQueue",
-    role    = "Auction flipping workflow",
-    icon    = "Interface\\AddOns\\flipqueue\\Art\\flipqueue-icon",
-    url     = "https://www.curseforge.com/wow/addons/flipqueue",
+    name      = "FlipQueue",
+    role      = "Auction flipping workflow",
+    innerIcon = "fq-inner",
+    url       = "https://www.curseforge.com/wow/addons/flipqueue",
+    cluster   = "core",
   },
   {
-    name    = "Tempo",
-    role    = "Reset & task tracking",
-    icon    = "Interface\\AddOns\\tempo\\Art\\tempo-icon",
-    url     = "https://www.curseforge.com/wow/addons/tempo",
+    name      = "Tempo",
+    role      = "Reset & task tracking",
+    innerIcon = "tm-inner",
+    url       = "https://www.curseforge.com/wow/addons/tempo",
+    cluster   = "core",
   },
   {
-    name    = "Maxcraft",
-    role    = "Profession optimization",
-    icon    = "Interface\\AddOns\\maxcraft\\Art\\maxcraft-icon",
-    url     = "https://www.curseforge.com/wow/addons/maxcraft",
+    name      = "Maxcraft",
+    role      = "Profession optimization",
+    innerIcon = "mc-inner",
+    url       = "https://www.curseforge.com/wow/addons/maxcraft",
+    cluster   = "edge",
+  },
+  {
+    name      = "Tally",
+    role      = "Sales & inventory ledger snapshots",
+    innerIcon = "tl-inner",
+    url       = "https://www.curseforge.com/wow/addons/tally",
+    cluster   = "edge",
   },
   {
     name    = "Ledger",
     role    = "Net worth & sales evaluation",
     icon    = "Interface\\Icons\\INV_Scroll_02",
     planned = true,
+    cluster = "edge",
   },
 }
 
 -- ============================================================================
 -- Gear assembly widget
 -- ============================================================================
--- A compact visual showing every cog in the suite as connected gears.
--- Installed cogs glow brass and spin slowly; missing ones are grayed out with
--- a "?" overlay; planned ones are outlined. Click a missing gear to see where
--- to get it. Embed via cw:CreateGearAssembly(parent).
+-- A visual showing every cog in the suite as gear-bordered minimap-style nodes.
+-- Two layouts:
+--   "cluster" — Cogworks at center; FlipQueue and Tempo flank the hub with
+--               teeth meshed; the hub spins clockwise and the meshed pair
+--               counter-rotates. Maxcraft / Tally / Ledger float at the
+--               edges (no mesh) reflecting that they're naturally less
+--               coupled to the rest of the suite.
+--   "row"     — Linear arrangement, all gears spinning together, with thin
+--               connector bars. Better when horizontal space is tight.
+-- Embed via cw:CreateGearAssembly(parent, { layout = "cluster" }).
 
 local GEAR_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_Gear_01"
-local GEAR_SIZE_CENTER = 48
-local GEAR_SIZE_COG    = 36
-local GEAR_SPACING     = 6
+
+-- Sizes are tuned so the gear-tooth ring (CogBorder) reads cleanly and the
+-- inner glyph fills roughly 60% of the ring (matching the minimap-button
+-- proportions of a 32px button inside a 53px tracking border).
+local HUB_RING_SIZE,  HUB_INNER_SIZE  = 64, 38
+local CORE_RING_SIZE, CORE_INNER_SIZE = 56, 34
+local EDGE_RING_SIZE, EDGE_INNER_SIZE = 44, 26
+
+-- Spin periods. Meshed gears must counter-rotate at speeds proportional to
+-- their tooth count (~ ring radius) so tooth velocity matches at the contact
+-- point. CORE_PERIOD is derived from HUB_PERIOD via the radius ratio.
+local HUB_PERIOD  = 24
+local CORE_PERIOD = HUB_PERIOD * (CORE_RING_SIZE / HUB_RING_SIZE)
+local EDGE_PERIOD = 30
+
+-- Cluster geometry (frame-local coords, origin at the hub center). Names
+-- match SuiteRoster `name` fields. Slots reflect the integration shape:
+-- core trio meshed in a horizontal line, edges floating diagonally.
+local CLUSTER_POSITIONS = {
+  Cogworks  = { x =   0, y =   0 },
+  FlipQueue = { x =  54, y =   0 },
+  Tempo     = { x = -54, y =   0 },
+  Maxcraft  = { x = -58, y =  50 },
+  Ledger    = { x =  58, y =  50 },
+  Tally     = { x =  54, y = -50 },
+}
+local CLUSTER_FRAME_W, CLUSTER_FRAME_H = 184, 168
+local ROW_SPACING = 8
+
+-- Decide ring/inner size, spin period, and rotation direction for a roster
+-- entry under the active layout. In cluster mode the hub spins one way and
+-- the meshed core trio spins the other; edges idle slowly. In row mode every
+-- non-hub uses the core size and everything spins the same direction.
+local function gearStyle(entry, layout)
+  local roleKey
+  if entry.central or entry.cluster == "hub" then
+    roleKey = "hub"
+  elseif layout == "cluster" then
+    roleKey = entry.cluster or "core"
+  else
+    roleKey = "core"  -- row mode flattens edge gears to core size
+  end
+
+  if roleKey == "hub"  then return roleKey, HUB_RING_SIZE,  HUB_INNER_SIZE,  HUB_PERIOD,  -1 end
+  if roleKey == "core" then return roleKey, CORE_RING_SIZE, CORE_INNER_SIZE, CORE_PERIOD, layout == "cluster" and 1 or -1 end
+  return roleKey, EDGE_RING_SIZE, EDGE_INNER_SIZE, EDGE_PERIOD, -1
+end
 
 function lib:CreateGearAssembly(parent, opts)
   opts = opts or {}
-  local T = self.Theme
+  local T      = self.Theme
   local roster = self.SuiteRoster
-  local showLabels = opts.showLabels ~= false
+  local layout = opts.layout or "cluster"
+  local showLabels = opts.showLabels
+  if showLabels == nil then showLabels = (layout == "row") end
 
   local f = CreateFrame("Frame", nil, parent)
-
   local gears = {}
-  local centerGear
 
-  local function createGear(entry, size)
+  local function createGear(entry)
+    local roleKey, ringSize, innerSize, period, dirSign = gearStyle(entry, layout)
+
     local g = CreateFrame("Button", nil, f)
-    g:SetSize(size, size)
+    g:SetSize(ringSize, ringSize)
 
-    -- background ring
+    -- Gear-tooth ring (rotates).
     g.ring = g:CreateTexture(nil, "BACKGROUND")
-    g.ring:SetSize(size + 4, size + 4)
+    g.ring:SetSize(ringSize, ringSize)
     g.ring:SetPoint("CENTER")
-    g.ring:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.6)
+    g.ring:SetTexture(libArtPath(nil, "CogBorder"))
 
-    -- mask the ring to a circle
-    g.ringMask = g:CreateMaskTexture()
-    g.ringMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    g.ringMask:SetSize(size + 4, size + 4)
-    g.ringMask:SetPoint("CENTER")
-    g.ring:AddMaskTexture(g.ringMask)
+    g.spinGroup = g.ring:CreateAnimationGroup()
+    local spin = g.spinGroup:CreateAnimation("Rotation")
+    spin:SetDegrees(dirSign * 360)
+    spin:SetDuration(period)
+    g.spinGroup:SetLooping("REPEAT")
 
-    -- icon
+    -- Inner glyph (does NOT rotate — minimap convention keeps the brand upright).
     g.icon = g:CreateTexture(nil, "ARTWORK")
-    g.icon:SetSize(size - 4, size - 4)
+    g.icon:SetSize(innerSize, innerSize)
     g.icon:SetPoint("CENTER")
 
-    -- circular mask for icon
-    g.iconMask = g:CreateMaskTexture()
-    g.iconMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    g.iconMask:SetSize(size - 4, size - 4)
-    g.iconMask:SetPoint("CENTER")
-    g.icon:AddMaskTexture(g.iconMask)
-
-    -- overlay for missing "?"
+    -- Overlay glyph for missing / planned states.
     g.missing = g:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    g.missing:SetPoint("CENTER", g, "CENTER", 0, 0)
+    g.missing:SetPoint("CENTER")
     g.missing:SetText("?")
     g.missing:SetTextColor(T.textDim[1], T.textDim[2], T.textDim[3])
     g.missing:Hide()
 
-    -- label below
     if showLabels then
       g.label = g:CreateFontString(nil, "OVERLAY")
       g.label:SetFontObject(lib.Fonts.small)
@@ -767,54 +840,55 @@ function lib:CreateGearAssembly(parent, opts)
       g.label:SetText(entry.name)
     end
 
-    -- rotation animation
-    g.spinGroup = g.icon:CreateAnimationGroup()
-    local spin = g.spinGroup:CreateAnimation("Rotation")
-    spin:SetDegrees(-360)
-    spin:SetDuration(entry.central and 20 or 12)
-    g.spinGroup:SetLooping("REPEAT")
-
     g.entry = entry
+    g.role  = roleKey
     return g
   end
 
   local function applyState(g)
     local entry = g.entry
     local installed = lib.addons[entry.name] ~= nil
-    local planned = entry.planned
+    local planned   = entry.planned
+
+    -- Inner glyph source. Cogworks-bundled innerIcon is preferred because
+    -- it always resolves; addonInfo.icon and entry.icon are fallbacks for
+    -- cogs whose art lives in their own AddOns folder.
+    local innerPath
+    if entry.innerIcon then
+      innerPath = libArtPath(nil, "inner\\" .. entry.innerIcon)
+    else
+      local addonInfo = lib.addons[entry.name]
+      innerPath = (addonInfo and addonInfo.icon) or entry.icon or GEAR_ICON_FALLBACK
+    end
+    g.icon:SetTexture(innerPath)
 
     if installed or entry.central then
-      -- use the addon's registered icon if available, fallback to roster icon
-      local addonInfo = lib.addons[entry.name]
-      local iconPath = (addonInfo and addonInfo.icon) or entry.icon or GEAR_ICON_FALLBACK
-      g.icon:SetTexture(iconPath)
       g.icon:SetDesaturated(false)
       g.icon:SetVertexColor(1, 1, 1)
-      g.ring:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.6)
+      g.ring:SetVertexColor(1, 1, 1, 1)
       g.missing:Hide()
-      g.spinGroup:Play()
       if g.label then g.label:SetTextColor(unpack(T.text)) end
     elseif planned then
-      g.icon:SetTexture(entry.icon or GEAR_ICON_FALLBACK)
       g.icon:SetDesaturated(true)
-      g.icon:SetVertexColor(0.3, 0.3, 0.35)
-      g.ring:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.3)
+      g.icon:SetVertexColor(0.45, 0.45, 0.5)
+      g.ring:SetVertexColor(0.55, 0.55, 0.6, 0.55)
       g.missing:SetText("...")
       g.missing:Show()
-      g.spinGroup:Stop()
       if g.label then g.label:SetTextColor(unpack(T.textDisabled)) end
     else
-      g.icon:SetTexture(entry.icon or GEAR_ICON_FALLBACK)
       g.icon:SetDesaturated(true)
-      g.icon:SetVertexColor(0.4, 0.4, 0.45)
-      g.ring:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.4)
+      g.icon:SetVertexColor(0.55, 0.55, 0.6)
+      g.ring:SetVertexColor(0.65, 0.65, 0.7, 0.7)
       g.missing:SetText("?")
       g.missing:Show()
-      g.spinGroup:Stop()
       if g.label then g.label:SetTextColor(unpack(T.textDim)) end
     end
 
-    -- Tooltip
+    -- Always-on rotation: the assembly is a *visual* of the suite, so the
+    -- cluster keeps turning regardless of which cogs happen to be installed.
+    -- Saturation + the "?" / "..." overlays carry the install-state signal.
+    if not g.spinGroup:IsPlaying() then g.spinGroup:Play() end
+
     g:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
       if installed or entry.central then
@@ -836,7 +910,6 @@ function lib:CreateGearAssembly(parent, opts)
     end)
     g:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Click handler for missing cogs
     g:SetScript("OnClick", function()
       if not installed and not entry.central and entry.url then
         lib:Print("Cogworks", "Get " .. entry.name .. ": " .. entry.url)
@@ -844,87 +917,104 @@ function lib:CreateGearAssembly(parent, opts)
     end)
   end
 
-  -- Build gears: center + surrounding cogs
-  local surrounding = {}
+  -- Build a gear node for every roster entry.
   for _, entry in ipairs(roster) do
-    if entry.central then
-      centerGear = createGear(entry, GEAR_SIZE_CENTER)
-    else
-      surrounding[#surrounding + 1] = createGear(entry, GEAR_SIZE_COG)
-    end
+    gears[#gears + 1] = createGear(entry)
   end
 
-  -- Layout: center gear, surrounding arranged in a row on either side
-  -- [cog1] [cog2] [CENTER] [cog3] [cog4]
-  local labelHeight = showLabels and 14 or 0
-  local totalHeight = GEAR_SIZE_CENTER + labelHeight + 4
-  local halfCount = math.ceil(#surrounding / 2)
-
-  if centerGear then
-    centerGear:SetPoint("CENTER", f, "CENTER", 0, labelHeight / 2)
-  end
-
-  local leftX = -(GEAR_SIZE_CENTER / 2 + GEAR_SPACING)
-  local rightX = (GEAR_SIZE_CENTER / 2 + GEAR_SPACING)
-  local centerY = labelHeight / 2
-
-  for i, g in ipairs(surrounding) do
-    if i <= halfCount then
-      -- left side, right-to-left
-      local offset = (halfCount - i) * (GEAR_SIZE_COG + GEAR_SPACING)
-      g:SetPoint("RIGHT", f, "CENTER", leftX - offset, centerY)
-    else
-      -- right side, left-to-right
-      local offset = (i - halfCount - 1) * (GEAR_SIZE_COG + GEAR_SPACING)
-      g:SetPoint("LEFT", f, "CENTER", rightX + offset, centerY)
-    end
-    gears[#gears + 1] = g
-  end
-  if centerGear then gears[#gears + 1] = centerGear end
-
-  -- Connecting bars between adjacent gears
+  -- Connector bars (used in row layout; cluster relies on tooth overlap).
   f.connectors = f.connectors or {}
-  local allPositioned = {}
-  for i = 1, halfCount do allPositioned[#allPositioned + 1] = surrounding[i] end
-  allPositioned[#allPositioned + 1] = centerGear
-  for i = halfCount + 1, #surrounding do allPositioned[#allPositioned + 1] = surrounding[i] end
-
-  -- connectors drawn after layout settles (OnShow)
-  local function drawConnectors()
+  local function hideConnectors()
     for _, c in ipairs(f.connectors) do c:Hide() end
-    local ci = 1
-    for i = 1, #allPositioned - 1 do
-      local conn = f.connectors[ci]
+  end
+
+  local function layoutCluster()
+    hideConnectors()
+    -- Position each gear at its named slot. Anything not in the slot map
+    -- (shouldn't happen with current roster) gets parked at the lower-left
+    -- so it's visible and can be repositioned later.
+    local fallbackY = -CLUSTER_FRAME_H / 2 + 30
+    for _, g in ipairs(gears) do
+      local pos = CLUSTER_POSITIONS[g.entry.name]
+      if not pos then
+        pos = { x = -CLUSTER_FRAME_W / 2 + 30, y = fallbackY }
+        fallbackY = fallbackY - 36
+      end
+      g:ClearAllPoints()
+      g:SetPoint("CENTER", f, "CENTER", pos.x, pos.y)
+    end
+    f:SetSize(CLUSTER_FRAME_W, CLUSTER_FRAME_H)
+  end
+
+  local function layoutRow()
+    -- Hub centered; non-hub gears alternating on either side in roster order.
+    local hub
+    local sides = {}
+    for _, g in ipairs(gears) do
+      if g.role == "hub" then hub = g else sides[#sides + 1] = g end
+    end
+
+    local labelH = showLabels and 14 or 0
+    local rowH   = HUB_RING_SIZE + labelH + 4
+
+    local yShift = labelH / 2
+    if hub then
+      hub:ClearAllPoints()
+      hub:SetPoint("CENTER", f, "CENTER", 0, yShift)
+    end
+
+    local halfCount = math.ceil(#sides / 2)
+    local hubHalf   = HUB_RING_SIZE / 2
+    local coreHalf  = CORE_RING_SIZE / 2
+
+    local positioned = {}
+    for i, g in ipairs(sides) do
+      g:ClearAllPoints()
+      if i <= halfCount then
+        local rank = halfCount - i  -- 0 = closest to hub
+        local x = -(hubHalf + ROW_SPACING + coreHalf + rank * (CORE_RING_SIZE + ROW_SPACING))
+        g:SetPoint("CENTER", f, "CENTER", x, yShift)
+      else
+        local rank = i - halfCount - 1
+        local x = (hubHalf + ROW_SPACING + coreHalf + rank * (CORE_RING_SIZE + ROW_SPACING))
+        g:SetPoint("CENTER", f, "CENTER", x, yShift)
+      end
+    end
+
+    -- Build the visual order (left → right) for connector bars.
+    for i = halfCount, 1, -1 do positioned[#positioned + 1] = sides[i] end
+    if hub then positioned[#positioned + 1] = hub end
+    for i = halfCount + 1, #sides do positioned[#positioned + 1] = sides[i] end
+
+    hideConnectors()
+    for i = 1, #positioned - 1 do
+      local conn = f.connectors[i]
       if not conn then
         conn = f:CreateTexture(nil, "BACKGROUND", nil, -1)
-        f.connectors[ci] = conn
+        f.connectors[i] = conn
       end
       conn:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.25)
       conn:SetHeight(2)
-      conn:SetPoint("LEFT", allPositioned[i], "RIGHT", -2, 0)
-      conn:SetPoint("RIGHT", allPositioned[i + 1], "LEFT", 2, 0)
+      conn:SetPoint("LEFT", positioned[i], "RIGHT", -2, 0)
+      conn:SetPoint("RIGHT", positioned[i + 1], "LEFT", 2, 0)
       conn:Show()
-      ci = ci + 1
     end
+
+    local rowW = HUB_RING_SIZE + 2 * (ROW_SPACING + halfCount * (CORE_RING_SIZE + ROW_SPACING)) + 16
+    f:SetSize(rowW, rowH)
   end
 
-  -- Calculate total width
-  local totalWidth = GEAR_SIZE_CENTER + GEAR_SPACING * 2
-    + #surrounding * GEAR_SIZE_COG
-    + math.max(0, #surrounding - 1) * GEAR_SPACING
-  f:SetSize(totalWidth + 16, totalHeight)
+  if layout == "row" then layoutRow() else layoutCluster() end
 
-  -- Apply states and connectors
   for _, g in ipairs(gears) do applyState(g) end
-  f:SetScript("OnShow", drawConnectors)
-  f.gears = gears
+  f.gears  = gears
+  f.layout = layout
 
   function f:Refresh()
     for _, g in ipairs(gears) do applyState(g) end
-    drawConnectors()
   end
 
-  -- Refresh when a new addon registers
+  -- Refresh when a new cog clicks in.
   local owner = {}
   lib.RegisterCallback(owner, lib.Events.AddonRegistered, function()
     if f:IsShown() then f:Refresh() end

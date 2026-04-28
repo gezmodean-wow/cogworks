@@ -1110,7 +1110,7 @@ pages.gears = function(parent)
 
   local y = 0
 
-  cw:CreateSectionHeader(c, "Suite Gear Assembly", y)
+  cw:CreateSectionHeader(c, "Suite Gear Assembly — Cluster", y)
   y = y - 20
 
   local desc = c:CreateFontString(nil, "OVERLAY")
@@ -1119,22 +1119,21 @@ pages.gears = function(parent)
   desc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
   desc:SetJustifyH("LEFT")
   desc:SetWordWrap(true)
-  desc:SetText("The gear assembly shows every cog in the suite. Installed cogs spin in brass; missing ones are grayed out (click for download link). Planned cogs show \"...\" — they're still being built. Embed this widget in any cog's About panel with cw:CreateGearAssembly(parent).")
+  desc:SetText("Cogworks at the hub with FlipQueue and Tempo mesh-engaged on either side; the hub spins clockwise and the meshed pair counter-rotates. Maxcraft, Tally, and Ledger float at the edges — naturally less coupled to the rest of the suite. Embed via cw:CreateGearAssembly(parent, { layout = \"cluster\" }).")
   desc:SetTextColor(unpack(T.textDim))
-  y = y - 50
+  y = y - 64
 
-  -- Large assembly with labels
-  local assembly = cw:CreateGearAssembly(c, { showLabels = true })
-  assembly:SetPoint("TOP", c, "TOP", 0, y)
-  y = y - (assembly:GetHeight() + 20)
+  local cluster = cw:CreateGearAssembly(c, { layout = "cluster" })
+  cluster:SetPoint("TOP", c, "TOP", 0, y)
+  y = y - (cluster:GetHeight() + 24)
 
-  -- Compact assembly without labels
-  cw:CreateSectionHeader(c, "Compact (no labels, for corners)", y)
+  -- Linear/independent variant
+  cw:CreateSectionHeader(c, "Linear (independent, with labels)", y)
   y = y - 20
 
-  local compact = cw:CreateGearAssembly(c, { showLabels = false })
-  compact:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  y = y - (compact:GetHeight() + 20)
+  local row = cw:CreateGearAssembly(c, { layout = "row", showLabels = true })
+  row:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - (row:GetHeight() + 20)
 
   -- Simulated states
   cw:CreateSectionHeader(c, "Registry Info", y)
