@@ -507,10 +507,12 @@ local TRACKING_BORDER_PATH    = "Interface\\Minimap\\MiniMap-TrackingBorder"
 -- Resolve a path to a TGA shipped inside Cogworks-1.0/Art/. The standalone
 -- Cogworks addon has no Libs\ wrapper around the lib subfolder; consumers do.
 -- callerAddon defaults to whichever addon's TOC loaded the lib (lib.loaderAddon).
+-- Comparison is case-insensitive because cogworks.toc is lowercase, so WoW
+-- reports the addon name as "cogworks" — a literal == "Cogworks" misses.
 local function libArtPath(callerAddon, relPath)
   callerAddon = callerAddon or lib.loaderAddon or "Cogworks"
-  if callerAddon == "Cogworks" then
-    return string.format("Interface\\AddOns\\Cogworks\\Cogworks-1.0\\Art\\%s", relPath)
+  if callerAddon:lower() == "cogworks" then
+    return string.format("Interface\\AddOns\\%s\\Cogworks-1.0\\Art\\%s", callerAddon, relPath)
   end
   return string.format("Interface\\AddOns\\%s\\Libs\\Cogworks-1.0\\Art\\%s", callerAddon, relPath)
 end
