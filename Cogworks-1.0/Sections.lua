@@ -58,7 +58,8 @@ function lib:CreateCollapsibleSection(parent, opts)
   header:SetScript("OnLeave", function() hover:Hide() end)
 
   -- Arrow indicator. WoW's default fonts don't include the Unicode
-  -- Geometric-Shapes block (▶ ▼ render as boxes), so use texture atlases.
+  -- Geometric-Shapes block (▶ ▼ render as boxes); the registered chevron
+  -- icons resolve to working atlases.
   local arrow = header:CreateTexture(nil, "OVERLAY")
   arrow:SetSize(10, 10)
   arrow:SetPoint("LEFT", HEADER_PAD_LEFT + 2, 0)
@@ -93,8 +94,7 @@ function lib:CreateCollapsibleSection(parent, opts)
   local contentHeight = 0
 
   local function refreshArrow()
-    arrow:SetAtlas(collapsed and "friendslist-categorybutton-arrow-right"
-                              or "friendslist-categorybutton-arrow-down", false)
+    self:ApplyIcon(arrow, collapsed and "chevron-right" or "chevron-down")
   end
 
   local function applyLayout()

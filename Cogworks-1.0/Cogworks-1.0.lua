@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 10
+local MAJOR, MINOR = "Cogworks-1.0", 11
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
