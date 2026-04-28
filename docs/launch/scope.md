@@ -1,6 +1,6 @@
 # What's in Cogworks vs. the individual cogs
 
-Cogworks is a **library**, not a feature addon. It exists so the cogs in the suite can talk to each other and share a coherent look without each one reinventing the same primitives. Most users will never install it directly — they'll get it embedded inside FlipQueue, Tempo, Maxcraft, or the upcoming ledger cog.
+Cogworks is a **library**, not a feature addon. It exists so the cogs in the suite can talk to each other and share a coherent look without each one reinventing the same primitives. Most users will never install it directly — they'll get it embedded inside FlipQueue, Tempo, Maxcraft, or Tally.
 
 This page draws a hard line between what belongs in Cogworks and what stays in the individual cogs, so nobody installs the standalone version expecting features it intentionally doesn't have.
 
@@ -12,7 +12,7 @@ Cogworks ships **primitives**. Anything in this list is something every cog can 
 
 | Area | What it provides | Why it's here |
 |---|---|---|
-| **Event bus** | `CallbackHandler`-backed registry with a canonical event list (`SaleLogged`, `CraftCompleted`, `ResetDue`, `InventoryChanged`, `GoldChanged`, …) | So FlipQueue can react to a Tempo reset, or the ledger can react to a FlipQueue sale, without any hard dependency between the two |
+| **Event bus** | `CallbackHandler`-backed registry with a canonical event list (`SaleLogged`, `CraftCompleted`, `ResetDue`, `InventoryChanged`, `GoldChanged`, …) | So FlipQueue can react to a Tempo reset, or Tally can react to a FlipQueue sale, without any hard dependency between the two |
 | **Addon registry** | `:RegisterAddon`, `:GetRegisteredAddons` | So an "About" panel in any cog can list its siblings and link to them |
 | **Theme palette** | Dark base + gold + arcane-purple + brass trim, plus status and WoW quality colors | So every cog uses the same look without copy-pasting hex values |
 | **Character key helper** | `:GetCharacterKey()` returning `"Name-RealmNormalized"` | So all suite data shares one keyspace and matches Syndicator's convention |
@@ -45,7 +45,7 @@ These all live inside the individual cogs that own them. Cogworks does not dupli
 | **FlipQueue** | The FlippingPal workflow, the buy/sell queue UI, item scanning, sale logging, the `/fq` and `/flipqueue` slash commands, `FlipQueueDB` |
 | **Tempo** | Daily/weekly/event reset tracking, the task list UI, the `/tempo` and `/tmp` slash commands, `TempoDB` and `TempoCharDB` |
 | **Maxcraft** | Profession optimization, recipe planning, reagent math, the `/maxcraft` and `/mxc` slash commands |
-| **Ledger (planned)** | Net worth tracking, sale evaluation, the historical price graph |
+| **Tally** | Net worth tracking, sale evaluation, ledger snapshots, the historical price graph |
 | **Syndicator** | The actual inventory scanner. Cogworks only detects whether Syndicator is loaded — it does not scan bags, banks, mail, or the auction house itself |
 
 If you find yourself wishing Cogworks did one of these things, you want the cog that owns it.

@@ -7,7 +7,7 @@ Cogworks is the shared core library of a WoW addon suite authored by Gezmodean (
 A single LibStub-registered library (`Cogworks-1.0`) distributed two ways:
 
 1. **Standalone addon** — `cogworks.toc` loads the library for local testing. Publishable on CurseForge as a reference install, though most users will get it embedded.
-2. **Embeddable library** — each sibling cog (FlipQueue, Tempo, Maxcraft, and the planned ledger cog) pulls Cogworks-1.0 into its own `Libs/` folder via `.pkgmeta` externals at packaging time.
+2. **Embeddable library** — each sibling cog (FlipQueue, Tempo, Maxcraft, Tally) pulls Cogworks-1.0 into its own `Libs/` folder via `.pkgmeta` externals at packaging time.
 
 LibStub handles version collisions: the newest `MINOR` loaded wins, and older copies short-circuit at the `NewLibrary` call.
 
@@ -16,7 +16,7 @@ LibStub handles version collisions: the newest `MINOR` loaded wins, and older co
 - **No Ace3.** Follows the same no-Ace stack as the rest of the suite: LibStub + CallbackHandler-1.0 + (optionally) LibDataBroker-1.1 + LibDBIcon-1.0. Both LibStub and CallbackHandler are already loaded by LibDataBroker in every existing cog, so Cogworks adds no new library cost.
 - **Additive only.** Every release bumps `MINOR`. Never remove an existing API — add new functions, leave the old ones alone. A breaking change would force every cog to re-release in lockstep, which defeats the entire point of the library.
 - **Opt-in, not enforced.** Cogs degrade gracefully if Cogworks is absent. Never assume cross-cog coordination is available — it's a bonus, not a requirement.
-- **Syndicator is a hard dependency for inventory-aware cogs.** FlipQueue and the planned ledger cog declare `## Dependencies: Syndicator` (not optional) and consume its API directly — no fallback scanner. Tempo and Maxcraft do not depend on Syndicator at all. Cogworks-1.0 itself stays dep-free (it's a library; dep declaration belongs to consumers). Cogworks provides canonical `"Name-Realm"` character keys that match Syndicator's convention so all suite data shares one keyspace, plus a `HasSyndicator()` helper for cogs that want to *opportunistically* enrich data without making Syndicator a hard requirement. See `docs/PLAN.md` for the full strategy.
+- **Syndicator is a hard dependency for inventory-aware cogs.** FlipQueue and Tally declare `## Dependencies: Syndicator` (not optional) and consume its API directly — no fallback scanner. Tempo and Maxcraft do not depend on Syndicator at all. Cogworks-1.0 itself stays dep-free (it's a library; dep declaration belongs to consumers). Cogworks provides canonical `"Name-Realm"` character keys that match Syndicator's convention so all suite data shares one keyspace, plus a `HasSyndicator()` helper for cogs that want to *opportunistically* enrich data without making Syndicator a hard requirement. See `docs/PLAN.md` for the full strategy.
 - **Chronomancy + clockwork, light touch.** Lore-flavored docstrings, module names, and README prose are welcome. Public API names stay plain (`:RegisterAddon`, not `:WindTheSpring`). When in doubt, pick the word a new user would understand instantly — lore is garnish, not substrate.
 
 ## Live-user constraints (critical)

@@ -8,7 +8,7 @@
 
 > ⚙️ **Cogworks v0.1.0 is live.**
 >
-> The mainspring of the suite — the shared library that lets FlipQueue, Tempo, Maxcraft, and the upcoming ledger cog tick to the same rhythm. Event bus, theme, character keys, addon registry, all in ~230 lines of Lua.
+> The mainspring of the suite — the shared library that lets FlipQueue, Tempo, Maxcraft, and Tally tick to the same rhythm. Event bus, theme, character keys, addon registry, all in ~230 lines of Lua.
 >
 > If you already use FlipQueue or Tempo, you'll get Cogworks automatically with their next update — nothing to install. If you're a developer building your own cog, you can embed it via `.pkgmeta`.
 >
@@ -27,7 +27,7 @@
 > Cogworks is the shared core library for the Cogworks suite. It's the piece that makes the cogs feel like one project instead of three unrelated addons.
 >
 > **What it gives every cog:**
-> • A shared event bus — FlipQueue can react to a Tempo reset, the ledger can react to a FlipQueue sale, no hard dependencies between any of them
+> • A shared event bus — FlipQueue can react to a Tempo reset, Tally can react to a FlipQueue sale, no hard dependencies between any of them
 > • A shared theme — dark base, gold accents, the arcane-purple highlight reserved for "time magic" moments
 > • Canonical `"Name-Realm"` character keys that match Syndicator's convention, so all suite data shares one keyspace
 > • An addon registry, so any cog can enumerate its installed siblings for an About panel or cross-promotion

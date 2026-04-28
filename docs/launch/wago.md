@@ -12,7 +12,7 @@
 
 ## Long description
 
-**Cogworks** is the shared core library that powers the Cogworks suite of addons by Gezmodean: **FlipQueue**, **Tempo**, **Maxcraft**, and the upcoming ledger cog. It's the mainspring — the thing that lets every cog tick to the same rhythm.
+**Cogworks** is the shared core library that powers the Cogworks suite of addons by Gezmodean: **FlipQueue**, **Tempo**, **Maxcraft**, and **Tally**. It's the mainspring — the thing that lets every cog tick to the same rhythm.
 
 ### Do I need to install this?
 
@@ -37,12 +37,12 @@ The standalone install adds a single slash command (`/cogworks`) and a one-line 
 
 ### The Cogworks suite
 
-| Cog       | Role                         | Status                         |
-|-----------|------------------------------|--------------------------------|
-| FlipQueue | FlippingPal workflow         | Live (CurseForge + Wago)       |
-| Tempo     | Reset / task tracker         | Live (CurseForge + Wago)       |
-| Maxcraft  | Profession optimization      | In development                 |
-| Ledger    | Net worth + sales evaluation | Planned (name TBD)             |
+| Cog       | Role                                              | Status                         |
+|-----------|---------------------------------------------------|--------------------------------|
+| FlipQueue | FlippingPal workflow                              | Live (CurseForge + Wago)       |
+| Tempo     | Reset / task tracker                              | Live (CurseForge + Wago)       |
+| Maxcraft  | Profession optimization                           | In development                 |
+| Tally     | Net worth, sales evaluation, ledger snapshots     | In development                 |
 
 Community hub: the **Chronoforge** Discord server.
 

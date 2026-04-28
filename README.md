@@ -29,12 +29,12 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 
 ## Suite members
 
-| Cog       | Role                         | Status                         |
-|-----------|------------------------------|--------------------------------|
-| FlipQueue | FlippingPal workflow         | Live (CurseForge + Wago)       |
-| Tempo     | Reset / task tracker         | Live (CurseForge + Wago)       |
-| Maxcraft  | Profession optimization      | In development                 |
-| _Ledger_  | Net worth + sales evaluation | Planned (name TBD)             |
+| Cog       | Role                                              | Status                         |
+|-----------|---------------------------------------------------|--------------------------------|
+| FlipQueue | FlippingPal workflow                              | Live (CurseForge + Wago)       |
+| Tempo     | Reset / task tracker                              | Live (CurseForge + Wago)       |
+| Maxcraft  | Profession optimization                           | In development                 |
+| Tally     | Net worth, sales evaluation, ledger snapshots     | In development                 |
 
 Community hub: the **Chronoforge** Discord server.
 
@@ -65,7 +65,7 @@ cw:Print("MyCog", "hello from a Chronosmith")
 
 -- Listen for a cross-cog event
 cw.RegisterCallback(self, cw.Events.SaleLogged, function(_, itemKey, price, qty, source)
-  -- react to a sale logged by FlipQueue or the ledger
+  -- react to a sale logged by FlipQueue or Tally
 end)
 
 -- Fire one

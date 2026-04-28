@@ -2,8 +2,8 @@
 --
 -- Lifted from FlipQueue's Core.lua so all suite cogs share one canonical
 -- implementation. Two consumers in mind today: FlipQueue (auction posting,
--- ledger reconciliation) and Tally (cross-source dedup of sales / inventory
--- / log entries).
+-- sale reconciliation) and Tally (cross-source dedup of sales / inventory
+-- / ledger entries).
 --
 -- Inventory coupling is parameterized — ResolveItemID and ItemsMatch take an
 -- optional lookupByName(searchNameLower) callback so callers pass whatever
@@ -17,7 +17,7 @@ if not lib then return end
 -- Item key construction
 -- ============================================================================
 -- All suite cogs use FlippingPal's "itemID;bonusIDs;modifiers" key shape so
--- cross-cog item lookups (FlipQueue ledger ↔ Tally research ↔ Maxcraft
+-- cross-cog item lookups (FlipQueue auctions ↔ Tally ledger ↔ Maxcraft
 -- crafting reagents) compare the same identifier.
 
 function lib:MakeItemKey(itemID, bonusIDs, modifiers)

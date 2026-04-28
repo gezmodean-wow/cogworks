@@ -7,7 +7,7 @@
 This guide is for the inventory-aware cogs in the Cogworks suite:
 
 - **FlipQueue** — being migrated from its own `Scanner.lua` to Syndicator (Phase 6a)
-- **Ledger** — built on top of Syndicator from day one (Phase 6b, not yet started)
+- **Tally** — built on top of Syndicator from day one (Phase 6b)
 
 Tempo and Maxcraft do **not** consume Syndicator and should not read this document for guidance — they have no inventory dependencies.
 
@@ -115,7 +115,7 @@ Syndicator.CallbackRegistry:RegisterCallback("AuctionsCacheUpdate", function(_, 
 end, ns)
 ```
 
-This is the bridge that lets the Ledger cog react to FlipQueue's inventory changes without depending directly on Syndicator's event names.
+This is the bridge that lets Tally react to FlipQueue's inventory changes without depending directly on Syndicator's event names.
 
 ## The lookup cache pattern
 
@@ -285,10 +285,10 @@ Don't even think about porting these to Syndicator:
 - Bank automation action layer (`BankQueue.lua`)
 - The slot verifier described above
 
-For the Ledger cog, the equivalent "owned" list will be:
+For Tally, the equivalent "owned" list will be:
 
 - Valuation pipeline (TSM source / Auctionator source / FlipQueue rolling-median source / vendor source)
-- Snapshot writer + time-series history in `LedgerDB.snapshots`
+- Snapshot writer + time-series history in `TallyDB.snapshots`
 - Sales subscription via `cw.RegisterCallback(self, cw.Events.SaleLogged, ...)` (FlipQueue fires this from `TrackerMail.lua` when a sale is reconciled)
 - Net worth UI
 
@@ -308,4 +308,4 @@ For the Ledger cog, the equivalent "owned" list will be:
 
 ## When to come back to this document
 
-This is Phase 6a-specific. Don't try to apply these patterns to Tempo or Maxcraft — those cogs have no inventory dependencies. If you're not actively working on FlipQueue's Syndicator migration or building the Ledger cog, this document is not the one you want. Read `PLAN.md` and `AGENT_BRIEF.md` instead.
+This is Phase 6a-specific. Don't try to apply these patterns to Tempo or Maxcraft — those cogs have no inventory dependencies. If you're not actively working on FlipQueue's Syndicator migration or building Tally, this document is not the one you want. Read `PLAN.md` and `AGENT_BRIEF.md` instead.

@@ -1,15 +1,15 @@
 # Cogworks Suite Integration Plan
 
-This document captures the architectural plan for turning FlipQueue, Tempo, and Maxcraft into a unified suite ("Cogworks") while protecting existing live users.
+This document captures the architectural plan for turning FlipQueue, Tempo, Maxcraft, and Tally into a unified suite ("Cogworks") while protecting existing live users.
 
 ## Current state
 
-| Cog       | Role                         | Published | SavedVariables                 | Slash commands       |
-|-----------|------------------------------|-----------|--------------------------------|----------------------|
-| FlipQueue | FlippingPal workflow         | YES       | `FlipQueueDB`                  | `/fq`, `/flipqueue`  |
-| Tempo     | Reset / task tracker         | YES       | `TempoDB`, `TempoCharDB`       | `/tempo`, `/tmp`     |
-| Maxcraft  | Profession optimization      | NO (dev)  | `MaxcraftDB`, `MaxcraftCharDB` | `/maxcraft`, `/mxc`  |
-| _Ledger_  | Net worth + sales evaluation | Planned   | TBD                            | TBD                  |
+| Cog       | Role                                              | Published | SavedVariables                 | Slash commands       |
+|-----------|---------------------------------------------------|-----------|--------------------------------|----------------------|
+| FlipQueue | FlippingPal workflow                              | YES       | `FlipQueueDB`                  | `/fq`, `/flipqueue`  |
+| Tempo     | Reset / task tracker                              | YES       | `TempoDB`, `TempoCharDB`       | `/tempo`, `/tmp`     |
+| Maxcraft  | Profession optimization                           | NO (dev)  | `MaxcraftDB`, `MaxcraftCharDB` | `/maxcraft`, `/mxc`  |
+| Tally     | Net worth, sales evaluation, ledger snapshots     | NO (dev)  | `TallyDB` (TBD)                | TBD                  |
 
 All three existing cogs share the same no-Ace stack (LibStub + CallbackHandler-1.0 + LibDataBroker-1.1 + LibDBIcon-1.0), the same `local addonName, ns = ...` namespace pattern, and a near-identical dark TSM-style theme. Tempo's own docs already describe its approach as "adopting FlipQueue DNA" — the patterns are consciously shared, they've just never been factored out.
 
@@ -33,7 +33,7 @@ Why:
 
 Per-cog stance:
 - **FlipQueue** → `## Dependencies: Syndicator` (hard). FlipQueue's existing `Scanner.lua` (~750 LOC) collapses to a thin "verify slot before click" layer (~150 LOC) used only on the action path (auto-pull, auto-deposit). All cross-character inventory queries route through `Syndicator.API`.
-- **Ledger** (planned) → `## Dependencies: Syndicator` (hard from day one). Built as a pure consumer with no scanning code at all.
+- **Tally** → `## Dependencies: Syndicator` (hard from day one). Built as a pure consumer with no scanning code at all.
 - **Tempo** → no Syndicator dep. Reset tracking doesn't need bag data.
 - **Maxcraft** → no Syndicator dep. Profession coaching only needs current-character data; `C_Container` is sufficient.
 - **Cogworks-1.0** → no dep. It's a library; dep declaration belongs to consumers.
@@ -81,7 +81,7 @@ Patterns we previously considered importing into Cogworks (debounced bag-scan co
 - FlipQueue: TSM/Auctionator integration, Transformer pipeline, BankQueue (action layer), Tracker modules, TodoGenerator, DealFinder, Sync
 - Tempo: TaskManager/TaskList/Scheduler, reset detectors + provider rules, template engine
 - Maxcraft: Step engine + StepLibrary evaluators, profession/buff/reagent data, CraftCoach/GatherCoach widgets
-- Ledger: valuation model, time-series history, net-worth UI
+- Tally: valuation model, time-series history, net-worth UI
 
 ## Phased rollout (live-user safe)
 
@@ -170,7 +170,7 @@ The 2026-04-10 audit of FlipQueue's data model against Syndicator's API confirme
 
 **What gets added (~80 LOC new):**
 - A lazy `{[itemKey] = {bindType, ilvl, name, quality}}` lookup cache, populated as we walk Syndicator data via `C_Item.GetItemInfo(itemLink)` and `GetDetailedItemLevelInfo(itemLink)`. This is NOT a scanner — it's memoized derivation. Lives in a new small file like `ItemLookup.lua`.
-- A thin Cogworks event re-emitter: subscribe to Syndicator's `BagCacheUpdate`, `WarbandBankCacheUpdate`, `MailCacheUpdate`, `AuctionsCacheUpdate` and fire `cw.Events.InventoryChanged` / `MailChanged` / `AuctionsChanged` for any sibling cog (the ledger) that wants them.
+- A thin Cogworks event re-emitter: subscribe to Syndicator's `BagCacheUpdate`, `WarbandBankCacheUpdate`, `MailCacheUpdate`, `AuctionsCacheUpdate` and fire `cw.Events.InventoryChanged` / `MailChanged` / `AuctionsChanged` for any sibling cog (Tally) that wants them.
 
 **What is NOT touched (these were never inventory data):**
 - `TrackerMail.lua` — sales reconciliation (matching incoming auction-success mail against the post log). Stays.
@@ -193,8 +193,8 @@ The 2026-04-10 audit of FlipQueue's data model against Syndicator's API confirme
 6. Smoke test the Sync.lua rewire on both single-account and BNet-linked-account setups.
 7. Delete the dev flag and the old scanning code. Ship as alpha → beta → stable. Changelog explicitly calls out the new Syndicator dependency AND the protocol bump for cross-account sync (older FlipQueue installs on the partner side cannot decode the new format — both sides must update).
 
-**6b — Ledger cog v0.1.0** *(new addon)*
-- See "Ledger cog" section below.
+**6b — Tally v0.1.0** *(new addon)*
+- See "Tally" section below.
 - Hard dep on Syndicator from day one. No legacy state to migrate.
 
 ### Phase 7 — (Optional) Standalone Cogworks hub addon
@@ -206,29 +206,21 @@ A tiny separate addon that, if installed:
 
 Opt-in. Cogs remain fully functional without it.
 
-## Ledger cog (new)
+## Tally
+
+> Tally was previously sketched as a planned cog called "Ledger" with a name still TBD; the name has been chosen and the cog now exists in development at `C:\src\tally`. References to "Ledger" anywhere in older notes refer to Tally.
 
 **Purpose:** cross-character net worth tracking, sales history analytics, and "is this sale actually profitable?" evaluation.
 
 **Dependencies:** `## Dependencies: Syndicator` (hard) + embeds `Cogworks-1.0`.
 
 **Data model:**
-- **Inventory + gold + currencies + auctions + mail:** read directly from Syndicator (`Syndicator.API.GetAllCharacters()`, `GetByCharacterFullName()`, `GetWarband(1)`, `GetCurrencyInfo()`). The ledger has zero scanning code of its own.
+- **Inventory + gold + currencies + auctions + mail:** read directly from Syndicator (`Syndicator.API.GetAllCharacters()`, `GetByCharacterFullName()`, `GetWarband(1)`, `GetCurrencyInfo()`). Tally has zero scanning code of its own.
 - **Prices:** pluggable valuation source — TSM first, Auctionator second, FlipQueue sales-rolling-median third, vendor price fourth. Each source registers with Cogworks via `cw:Fire(cw.Events.PriceUpdated, ...)`.
-- **Sales log:** FlipQueue fires `cw.Events.SaleLogged` when a mail confirms a sale; the ledger subscribes via `cw.RegisterCallback` and persists each sale into `LedgerDB` with timestamp, item key, price, cost basis (if known), and net P&L.
-- **Time-series history:** ledger writes net-worth snapshots into `LedgerDB.snapshots` on login, on /reload, and on major inventory events (debounced). Syndicator only stores current state; history is the ledger's job.
+- **Sales log:** FlipQueue fires `cw.Events.SaleLogged` when a mail confirms a sale; Tally subscribes via `cw.RegisterCallback` and persists each sale into `TallyDB` with timestamp, item key, price, cost basis (if known), and net P&L.
+- **Time-series history:** Tally writes net-worth snapshots into `TallyDB.snapshots` on login, on /reload, and on major inventory events (debounced). Syndicator only stores current state; history is Tally's job.
 
 **Estimated size:** <1500 LOC because the scanning layer is gone entirely.
-
-**Name candidates** (in rough order of preference — pick what feels right):
-1. **Chronicle** — chronomancy-adjacent, implies a historical ledger. Downside: generic word, may already be taken on CurseForge.
-2. **Reckoner** — "a reckoning of accounts" also means a reckoning of time. Clockwork + finance. Strong.
-3. **Countinghouse** — a medieval finance hall; pairs well with "Chronoforge."
-4. **Treasury** — plain and clear; no flavor.
-5. **Abacus** — counting device, mechanical. Cute but might feel small.
-6. **Escapement** — the clockwork part that governs the release of energy (i.e. time-based cashflow). Most on-theme but most cryptic.
-
-Suggested TOC name pattern matching the suite: lowercase folder (e.g. `reckoner`, `chronicle`), PascalCase display title.
 
 ## Branding / chronomancy voice (light touch)
 
@@ -253,10 +245,10 @@ Suggested TOC name pattern matching the suite: lowercase folder (e.g. `reckoner`
 | SavedVariables corruption during DB helper migration | Schema version canary + no-op migration first; test on real SV copies; stagger cog releases by a week. |
 | "Why is FlipQueue suddenly talking about Cogworks?" confusion | Phase 5 (branding) lands only after technical phases are stable. About panel explains the suite. Discord link provides a Q&A surface. |
 | "Cogworks" already taken on CurseForge | Check before publishing the standalone `cogworks` addon. Embedded library path doesn't need a CurseForge slot. |
-| Syndicator API changes | Plusmouse maintains a stable API contract (Baganator depends on it). If the upstream API ever shifts, FlipQueue and Ledger pin to a known-working Syndicator version range in their TOC. The `Cogworks-1.0` library has zero Syndicator code so a Syndicator break never cascades to Tempo or Maxcraft. |
+| Syndicator API changes | Plusmouse maintains a stable API contract (Baganator depends on it). If the upstream API ever shifts, FlipQueue and Tally pin to a known-working Syndicator version range in their TOC. The `Cogworks-1.0` library has zero Syndicator code so a Syndicator break never cascades to Tempo or Maxcraft. |
 | FlipQueue user surprised by new hard dep | Changelog and CurseForge/Wago description explicitly call it out. CurseForge's client auto-installs hard deps. FlipQueue is alpha — early adopters tolerate version bumps. |
 | Release coordination burden grows | Each cog releases independently. Cogworks-1.0 externals **pin to tags**, not `main`, so a Cogworks update doesn't auto-ship until each cog repins. |
-| Ledger needs features Syndicator doesn't expose | Ledger can scan specific slots directly on its own character while still using Syndicator for cross-character rollups. Hybrid is fine in degenerate cases. |
+| Tally needs features Syndicator doesn't expose | Tally can scan specific slots directly on its own character while still using Syndicator for cross-character rollups. Hybrid is fine in degenerate cases. |
 
 ## First concrete steps (after bootstrap)
 
