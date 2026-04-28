@@ -717,7 +717,8 @@ lib.SuiteRoster = {
     name      = "Tally",
     role      = "Sales & inventory ledger snapshots",
     innerIcon = "tl-inner",
-    url       = "https://www.curseforge.com/wow/addons/tally",
+    -- url left unset: Tally has no CurseForge slug yet. The "click missing
+    -- gear for download link" path is a no-op until that's filled in.
     cluster   = "edge",
   },
   {
