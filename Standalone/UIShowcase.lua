@@ -1119,7 +1119,7 @@ pages.gears = function(parent)
   desc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
   desc:SetJustifyH("LEFT")
   desc:SetWordWrap(true)
-  desc:SetText("Cogworks at the hub with FlipQueue and Tempo mesh-engaged on either side; the hub spins clockwise and the meshed pair counter-rotates. Maxcraft, Tally, and Ledger float at the edges — naturally less coupled to the rest of the suite. Embed via cw:CreateGearAssembly(parent, { layout = \"cluster\" }).")
+  desc:SetText("Cogworks at the hub with FlipQueue and Tempo mesh-engaged on either side; the hub spins clockwise and the meshed pair counter-rotates. Maxcraft and Tally sit above as triangle apexes — visually a separate layer from the core trio, reflecting that they're naturally less coupled. Embed via cw:CreateGearAssembly(parent, { layout = \"cluster\" }).")
   desc:SetTextColor(unpack(T.textDim))
   y = y - 64
 

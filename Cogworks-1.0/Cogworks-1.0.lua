@@ -12,7 +12,7 @@
 --     go away. A breaking change would force every cog to re-release in
 --     lockstep, which is exactly what this library exists to avoid.
 --   * Syndicator is a hard dependency for inventory-aware cogs (FlipQueue,
---     Ledger). They declare it in their TOC and consume it directly with no
+--     Tally). They declare it in their TOC and consume it directly with no
 --     fallback scanner. Character keys follow Syndicator's "Name-Realm"
 --     convention so all suite data shares one keyspace.
 
@@ -374,8 +374,8 @@ end
 -- Syndicator bridge
 -- ============================================================================
 -- Cogworks itself does not require Syndicator. Inventory-aware cogs (FlipQueue,
--- the planned Ledger) declare it as a HARD dependency in their TOC and consume
--- it directly with no fallback scanner.
+-- Tally) declare it as a HARD dependency in their TOC and consume it directly
+-- with no fallback scanner.
 --
 -- This helper exists for cogs that want to OPPORTUNISTICALLY enrich their data
 -- when Syndicator happens to be present, without making it a hard requirement
@@ -717,18 +717,11 @@ lib.SuiteRoster = {
   },
   {
     name      = "Tally",
-    role      = "Sales & inventory ledger snapshots",
+    role      = "Net worth, sales evaluation, ledger snapshots",
     innerIcon = "tl-inner",
     -- url left unset: Tally has no CurseForge slug yet. The "click missing
     -- gear for download link" path is a no-op until that's filled in.
     cluster   = "edge",
-  },
-  {
-    name    = "Ledger",
-    role    = "Net worth & sales evaluation",
-    icon    = "Interface\\Icons\\INV_Scroll_02",
-    planned = true,
-    cluster = "edge",
   },
 }
 
@@ -739,9 +732,10 @@ lib.SuiteRoster = {
 -- Two layouts:
 --   "cluster" — Cogworks at center; FlipQueue and Tempo flank the hub with
 --               teeth meshed; the hub spins clockwise and the meshed pair
---               counter-rotates. Maxcraft / Tally / Ledger float at the
---               edges (no mesh) reflecting that they're naturally less
---               coupled to the rest of the suite.
+--               counter-rotates. Maxcraft and Tally sit above as triangle
+--               apexes (Maxcraft above the Tempo↔hub mesh, Tally above the
+--               hub↔FlipQueue mesh) — visually a separate layer from the
+--               core trio, reflecting that they're naturally less coupled.
 --   "row"     — Linear arrangement, all gears spinning together, with thin
 --               connector bars. Better when horizontal space is tight.
 -- Embed via cw:CreateGearAssembly(parent, { layout = "cluster" }).
@@ -749,10 +743,11 @@ lib.SuiteRoster = {
 local GEAR_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_Gear_01"
 
 -- Sizes are tuned so the inner glyph reaches the inner edge of the gear
--- ring with no visible gap. The first pass used the 32/53 minimap ratio
--- (~0.60) but in-game the gear hole reads bigger than the tracking-border
--- hole — going up to ~0.82 closes the gap on every size tier.
-local HUB_RING_SIZE,  HUB_INNER_SIZE  = 64, 52
+-- ring. CogBorder's central hole reads bigger than the tracking-border's
+-- hole, so the inner glyph runs ~0.82 of the ring on core/edge tiers and
+-- ~0.88 on the hub (the hub texture has more anti-aliased edge area, so
+-- pushing the inner closer hides the alpha falloff behind ring teeth).
+local HUB_RING_SIZE,  HUB_INNER_SIZE  = 64, 56
 local CORE_RING_SIZE, CORE_INNER_SIZE = 56, 46
 local EDGE_RING_SIZE, EDGE_INNER_SIZE = 44, 36
 
@@ -763,18 +758,20 @@ local HUB_PERIOD  = 24
 local CORE_PERIOD = HUB_PERIOD * (CORE_RING_SIZE / HUB_RING_SIZE)
 local EDGE_PERIOD = 30
 
--- Cluster geometry (frame-local coords, origin at the hub center). Names
+-- Cluster geometry (frame-local coords, origin at the frame center). Names
 -- match SuiteRoster `name` fields. Slots reflect the integration shape:
--- core trio meshed in a horizontal line, edges floating diagonally.
+-- core trio meshed in a horizontal line; Maxcraft and Tally form triangle
+-- apexes above the core (between Tempo↔hub and hub↔FlipQueue respectively).
+-- Vertical centering chosen so content extents are roughly symmetric
+-- around y = 0 (core trio sits below center, edges sit above center).
 local CLUSTER_POSITIONS = {
-  Cogworks  = { x =   0, y =   0 },
-  FlipQueue = { x =  54, y =   0 },
-  Tempo     = { x = -54, y =   0 },
-  Maxcraft  = { x = -58, y =  50 },
-  Ledger    = { x =  58, y =  50 },
-  Tally     = { x =  54, y = -50 },
+  Cogworks  = { x =   0, y = -21 },
+  FlipQueue = { x =  54, y = -21 },
+  Tempo     = { x = -54, y = -21 },
+  Maxcraft  = { x = -27, y =  31 },
+  Tally     = { x =  27, y =  31 },
 }
-local CLUSTER_FRAME_W, CLUSTER_FRAME_H = 184, 168
+local CLUSTER_FRAME_W, CLUSTER_FRAME_H = 180, 120
 local ROW_SPACING = 8
 
 -- Decide ring/inner size, spin period, and rotation direction for a roster
@@ -830,13 +827,6 @@ function lib:CreateGearAssembly(parent, opts)
     g.icon:SetSize(innerSize, innerSize)
     g.icon:SetPoint("CENTER")
 
-    -- Overlay glyph for missing / planned states.
-    g.missing = g:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    g.missing:SetPoint("CENTER")
-    g.missing:SetText("?")
-    g.missing:SetTextColor(T.textDim[1], T.textDim[2], T.textDim[3])
-    g.missing:Hide()
-
     if showLabels then
       g.label = g:CreateFontString(nil, "OVERLAY")
       g.label:SetFontObject(lib.Fonts.small)
@@ -866,31 +856,28 @@ function lib:CreateGearAssembly(parent, opts)
     end
     g.icon:SetTexture(innerPath)
 
+    -- Saturation + ring tint carry the install-state signal — no overlay
+    -- glyph. (A "?" on dimmed gears wasn't communicating anything beyond
+    -- what desaturation already conveyed, so it was just noise.)
     if installed or entry.central then
       g.icon:SetDesaturated(false)
-      g.icon:SetVertexColor(1, 1, 1)
+      g.icon:SetVertexColor(1, 1, 1, 1)
       g.ring:SetVertexColor(1, 1, 1, 1)
-      g.missing:Hide()
       if g.label then g.label:SetTextColor(unpack(T.text)) end
     elseif planned then
       g.icon:SetDesaturated(true)
-      g.icon:SetVertexColor(0.45, 0.45, 0.5)
+      g.icon:SetVertexColor(0.45, 0.45, 0.5, 1)
       g.ring:SetVertexColor(0.55, 0.55, 0.6, 0.55)
-      g.missing:SetText("...")
-      g.missing:Show()
       if g.label then g.label:SetTextColor(unpack(T.textDisabled)) end
     else
       g.icon:SetDesaturated(true)
-      g.icon:SetVertexColor(0.55, 0.55, 0.6)
+      g.icon:SetVertexColor(0.55, 0.55, 0.6, 1)
       g.ring:SetVertexColor(0.65, 0.65, 0.7, 0.7)
-      g.missing:SetText("?")
-      g.missing:Show()
       if g.label then g.label:SetTextColor(unpack(T.textDim)) end
     end
 
     -- Always-on rotation: the assembly is a *visual* of the suite, so the
     -- cluster keeps turning regardless of which cogs happen to be installed.
-    -- Saturation + the "?" / "..." overlays carry the install-state signal.
     if not g.spinGroup:IsPlaying() then g.spinGroup:Play() end
 
     g:SetScript("OnEnter", function(self)
