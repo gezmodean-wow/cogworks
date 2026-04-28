@@ -19,7 +19,7 @@
 assert(LibStub, "Cogworks-1.0 requires LibStub")
 assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires CallbackHandler-1.0")
 
-local MAJOR, MINOR = "Cogworks-1.0", 9
+local MAJOR, MINOR = "Cogworks-1.0", 10
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -470,10 +470,15 @@ end
 -- ============================================================================
 -- Minimap button — shared gear-bordered chrome
 -- ============================================================================
--- Wraps LibDBIcon:Register with the suite's gear-ring border texture so all
--- Chronoforge cogs get a consistent minimap identity. LibDBIcon's
--- SetButtonBorder API swaps the default circular tracking border for our
--- gear. The dataobject's icon continues to provide the per-cog inner glyph.
+-- Wraps LibDBIcon:Register so every Chronoforge cog gets the same gear-ring
+-- border around its minimap button. Hides LibDBIcon's default circular
+-- tracking border and adds a gear texture as an OVERLAY child on the LDBIcon
+-- button. The dataobject's icon continues to provide the per-cog inner glyph.
+--
+-- Layout note: CogBorder.tga ships inside Cogworks-1.0/Art/ so the packager
+-- external pulls it into every consumer's Libs/Cogworks-1.0/Art/. The texture
+-- path is constructed from the caller's addonName so it resolves whether the
+-- caller is the standalone Cogworks addon or any embedding cog.
 --
 -- Usage (from a cog's entry Lua):
 --   local Cogworks = LibStub("Cogworks-1.0", true)
@@ -488,8 +493,18 @@ end
 --     Cogworks:RegisterCogMinimapButton(addonName, dataobj, FlipQueueDB.minimap)
 --   end
 
-local COG_BORDER_TEXTURE = "Interface\\AddOns\\Cogworks\\Art\\CogBorder"
-local COG_BORDER_SIZE = 50
+local COG_BORDER_SIZE = 53
+local TRACKING_BORDER_FILE_ID = 136430
+local TRACKING_BORDER_PATH    = "Interface\\Minimap\\MiniMap-TrackingBorder"
+
+local function gearBorderPath(addonName)
+  -- Standalone Cogworks: art lives at Cogworks/Cogworks-1.0/Art/.
+  -- Embedded consumers: <consumer>/Libs/Cogworks-1.0/Art/.
+  if addonName == "Cogworks" then
+    return "Interface\\AddOns\\Cogworks\\Cogworks-1.0\\Art\\CogBorder"
+  end
+  return string.format("Interface\\AddOns\\%s\\Libs\\Cogworks-1.0\\Art\\CogBorder", addonName)
+end
 
 function lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)
   local LDBIcon = LibStub("LibDBIcon-1.0", true)
@@ -499,13 +514,24 @@ function lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)
   end
 
   LDBIcon:Register(addonName, dataobject, savedvars)
-  LDBIcon:SetButtonBorder(
-    addonName,
-    COG_BORDER_TEXTURE,
-    COG_BORDER_SIZE,
-    "TOPLEFT",
-    0, 0
-  )
+
+  local button = (LDBIcon.GetMinimapButton and LDBIcon:GetMinimapButton(addonName))
+              or (LDBIcon.objects and LDBIcon.objects[addonName])
+  if not button then return false end
+
+  for _, region in ipairs({ button:GetRegions() }) do
+    if region:GetObjectType() == "Texture" then
+      local tex = region:GetTexture()
+      if tex == TRACKING_BORDER_FILE_ID or tex == TRACKING_BORDER_PATH then
+        region:Hide()
+      end
+    end
+  end
+
+  local gear = button:CreateTexture("$parentCogBorder", "OVERLAY", nil, 7)
+  gear:SetTexture(gearBorderPath(addonName))
+  gear:SetSize(COG_BORDER_SIZE, COG_BORDER_SIZE)
+  gear:SetPoint("CENTER", button, "CENTER", 0, 0)
 
   return true
 end
