@@ -2,6 +2,27 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.10.0] — Embedded-layout minimap fix, icon registry, gear assembly chrome
+
+Bumps MINOR from `9` to `12`. Resolves issues #9, #10, #11, #13.
+
+### Added
+- **Suite-wide icon registry** (`Cogworks-1.0/Icons.lua`) — `lib:RegisterIcon(name, def)`, `lib:ApplyIcon(texture, name)`, `lib:HasIcon(name)`. Built-in `chevron-right` and `chevron-down` resolve to friendslist atlases. Solves the recurring "WoW default fonts don't ship the Unicode Geometric-Shapes block, so `▶ ▼` render as missing-glyph boxes" problem once instead of per-widget. Cogs register their own variants via `RegisterIcon`. (#9)
+- **Gear assembly cluster + row layouts** — `lib:CreateGearAssembly(parent, opts)` accepts `opts.layout = "cluster"` (default) or `"row"`. Cluster places Cogworks at the hub with FlipQueue + Tempo as the meshed core trio (counter-rotating, periods scaled by tooth velocity at contact); Maxcraft and Tally float as edge gears. Row mode is linear with thin connector bars. Always-on animation — saturation + `?` / `...` overlays carry install-state signal. (#11)
+- **Bundled minimap chrome ships with the library** — `CogBorder.tga` and per-cog inner-glyph TGAs (`fq-inner`, `tm-inner`, `mc-inner`, `tl-inner`, `cw-inner`) moved into `Cogworks-1.0/Art/` so embedded consumers receive them via the existing `path: Cogworks-1.0` external. New `libArtPath` helper centralizes path resolution and captures the loader addonName at file load. (#13)
+- **`Tally` added to `lib.SuiteRoster`** — renders in the gear assembly with its own inner glyph.
+- **`innerIcon` and `cluster` fields on roster entries** — layout slot decision (`hub` / `core` / `edge`) lives in the roster, not the widget.
+
+### Fixed
+- **`RegisterCogMinimapButton` now works in embedded layout** — previous wrapper called `LibDBIcon:SetButtonBorder` (only on v56+; Tally vendored v44) and hard-coded `Interface\AddOns\Cogworks\Art\CogBorder` which doesn't resolve when consumers have no top-level `Cogworks` folder. New implementation adopts Tally's overlay-texture pattern: `LibDBIcon:Register`, hide the default tracking-border region, add a gear OVERLAY child texture. Works on every LibDBIcon version. (#10)
+- **`libArtPath` standalone-vs-embedded detection is now case-insensitive** — comparison was `== "Cogworks"` but `cogworks.toc` is lowercased, so standalone resolution fell through to the embedded path. Comparison is now `:lower() == "cogworks"`.
+- **Inner-glyph-to-ring gap closed** — visual seam between the inner glyph and the gear ring.
+
+### Removed
+- **`Ledger` cog name purged** — Tally is the suite's ledger. Roster entry, gear-assembly slot, and docs all updated.
+
+> **Note**: Releases 0.4.0–0.9.0 shipped without changelog entries. Their work is captured in closed issues #3 (minimap gear-border), #4 (icon readability), #5 (versioned cross-cog API registry — `Cogworks-1.0/API.lua`), #6 (item-key + realm helpers — `Cogworks-1.0/Items.lua`, `Cogworks-1.0/Realms.lua`), #7 (standalone dev console), and #8 (RegisterCogMinimapButton initial). `CreateCollapsibleSection` (`Cogworks-1.0/Sections.lua`) shipped as the v0.9.0 starter for #1 Phase A.
+
 ## [0.3.0] — Font scaling, settings, and gear assembly
 
 Bumps MINOR from `2` to `3`. Adds accessibility-focused customization and the suite gear assembly widget.
