@@ -32,11 +32,15 @@ end
 --   section:GetConsumedHeight()
 --
 -- opts:
---   title          string (required) — header label
---   summary        string (optional) — dim subtitle to the right of the title
---   width          number (optional) — section width; defaults to parent width
---   startCollapsed bool   (optional) — initial state; default false
---   onToggle       func   (optional) — called with the new collapsed bool
+--   title           string — header label  (required)
+--   summary         string — dim subtitle to the right of the title
+--   width           number — section width; defaults to parent width
+--   startCollapsed  bool   — initial state; default false
+--   onToggle        fn(c)  — fired only when the user clicks the header
+--   onLayoutChanged fn(h)  — fired whenever the section's consumed height
+--                            changes for any reason (toggle, font reflow,
+--                            SetContentHeight). Use this when the caller
+--                            owns a sibling stack that needs reflowing.
 function lib:CreateCollapsibleSection(parent, opts)
   assert(type(opts) == "table" and opts.title, "CreateCollapsibleSection: opts.title required")
   local T = self.Theme
@@ -97,6 +101,19 @@ function lib:CreateCollapsibleSection(parent, opts)
     self:ApplyIcon(arrow, collapsed and "chevron-right" or "chevron-down")
   end
 
+  -- Compute the section's full consumed height from current internal state.
+  -- Used both for SetHeight in applyLayout and for the public getter so
+  -- callers always read the most recent value without depending on a
+  -- separate layout pass to settle :GetHeight().
+  local function computeConsumedHeight()
+    local hH = headerHeightFor(titleFs)
+    if collapsed or contentHeight <= 0 then
+      return hH
+    else
+      return hH + CONTENT_PAD_TOP + contentHeight + CONTENT_PAD_BOT
+    end
+  end
+
   local function applyLayout()
     local hH = headerHeightFor(titleFs)
     header:SetHeight(hH)
@@ -113,6 +130,7 @@ function lib:CreateCollapsibleSection(parent, opts)
       section:SetHeight(hH + CONTENT_PAD_TOP + contentHeight + CONTENT_PAD_BOT)
     end
     refreshArrow()
+    if opts.onLayoutChanged then opts.onLayoutChanged(computeConsumedHeight()) end
   end
 
   function section:SetCollapsed(b)
@@ -133,7 +151,7 @@ function lib:CreateCollapsibleSection(parent, opts)
   end
 
   function section:GetConsumedHeight()
-    return section:GetHeight()
+    return computeConsumedHeight()
   end
 
   header:SetScript("OnClick", function()

@@ -1513,50 +1513,50 @@ pages.sections = function(parent)
   -- ---- CreateCollapsibleSection demos ------------------------------------
   addSectionHeader("CreateCollapsibleSection")
 
-  local sec1 = cw:CreateCollapsibleSection(c, {
-    title    = "Section A",
-    summary  = "open by default; toggling reflows the page below",
-    onToggle = function() relayout() end,
-  })
-  do
-    local body = sec1.content:CreateFontString(nil, "OVERLAY")
+  -- Build a section with a wrapping body FontString. The heightFn recomputes
+  -- body:GetStringHeight() each time relayout walks, so font-scale changes
+  -- flow through to the section's contentHeight without manual subscription.
+  local function makeTextSection(opts, text)
+    local section = cw:CreateCollapsibleSection(c, opts)
+    local body = section.content:CreateFontString(nil, "OVERLAY")
     body:SetFontObject(cw:GetFont("normal"))
-    body:SetPoint("TOPLEFT", sec1.content, "TOPLEFT", 0, 0)
-    body:SetPoint("RIGHT", sec1.content, "RIGHT", 0, 0)
+    body:SetPoint("TOPLEFT", section.content, "TOPLEFT", 0, 0)
+    body:SetPoint("RIGHT", section.content, "RIGHT", 0, 0)
     body:SetJustifyH("LEFT")
     body:SetWordWrap(true)
     body:SetTextColor(unpack(T.text))
-    body:SetText("Section bodies render whatever you put into section.content. Width is fixed at construction; height comes from SetContentHeight, which the section uses to size itself plus its chrome.")
-    sec1:SetContentHeight(body:GetStringHeight() + 4)
-  end
-  add(sec1, function() return sec1:GetConsumedHeight() end, 4)
+    body:SetText(text)
+    section:SetContentHeight(body:GetStringHeight() + 4)
 
-  local sec2 = cw:CreateCollapsibleSection(c, {
-    title          = "Section B",
-    summary        = "starts collapsed; click to expand",
-    startCollapsed = true,
-    onToggle       = function() relayout() end,
-  })
-  do
-    local body = sec2.content:CreateFontString(nil, "OVERLAY")
-    body:SetFontObject(cw:GetFont("normal"))
-    body:SetPoint("TOPLEFT", sec2.content, "TOPLEFT", 0, 0)
-    body:SetPoint("RIGHT", sec2.content, "RIGHT", 0, 0)
-    body:SetJustifyH("LEFT")
-    body:SetWordWrap(true)
-    body:SetTextColor(unpack(T.text))
-    body:SetText("The chevron is the suite-wide icon registry's chevron-right / chevron-down (issue #9) — WoW's default fonts don't ship Unicode Geometric Shapes, so registered atlases stand in.")
-    sec2:SetContentHeight(body:GetStringHeight() + 4)
+    local function freshHeight()
+      section:SetContentHeight(body:GetStringHeight() + 4)
+      return section:GetConsumedHeight()
+    end
+    return section, freshHeight
   end
-  add(sec2, function() return sec2:GetConsumedHeight() end, 16)
+
+  local sec1, sec1H = makeTextSection({
+    title           = "Section A",
+    summary         = "open by default; toggling reflows the page below",
+    onLayoutChanged = function() relayout() end,
+  }, "Section bodies render whatever you put into section.content. Width is fixed at construction; height comes from SetContentHeight, which the section uses to size itself plus its chrome.")
+  add(sec1, sec1H, 4)
+
+  local sec2, sec2H = makeTextSection({
+    title           = "Section B",
+    summary         = "starts collapsed; click to expand",
+    startCollapsed  = true,
+    onLayoutChanged = function() relayout() end,
+  }, "The chevron is the suite-wide icon registry's chevron-right / chevron-down (issue #9) — WoW's default fonts don't ship Unicode Geometric Shapes, so registered atlases stand in.")
+  add(sec2, sec2H, 16)
 
   -- ---- Settings form helpers (live-stacked with y-cursor) ----------------
   addSectionHeader("Settings Form Helpers")
 
   local formSection = cw:CreateCollapsibleSection(c, {
-    title    = "Form rows (CreateSettingsCheckbox / Button / Input)",
-    summary  = "y-cursor stack; reflows on font change and on toggle",
-    onToggle = function() relayout() end,
+    title           = "Form rows (CreateSettingsCheckbox / Button / Input)",
+    summary         = "y-cursor stack; reflows on font change and on toggle",
+    onLayoutChanged = function() relayout() end,
   })
 
   local demoState = { foo = true, bar = false, queueSize = 50, label = "Hello" }
@@ -1671,6 +1671,17 @@ pages.sections = function(parent)
   autoLabel:SetTextColor(unpack(T.textDim))
   autoLabel:SetText("autoWidth (clamped 120 — 360px); refits on font change")
   add(autoRow, function() return 28 end, 24, false)
+
+  -- Subscribe at the page level so font-scale / family changes trigger an
+  -- immediate relayout — picks up the new body GetStringHeight values that
+  -- each section's heightFn recomputes when called.
+  local fontReflowOwner = {}
+  cw.RegisterCallback(fontReflowOwner, cw.Events.SettingsChanged, function(_, key)
+    if key == "fontScale" or key == "fontFamily" then
+      relayoutFormRows()  -- bubbles up into relayout()
+    end
+  end)
+  f._fontReflowOwner = fontReflowOwner
 
   relayout()
   return f
