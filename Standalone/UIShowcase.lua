@@ -167,6 +167,7 @@ local function createShowcase()
   local navDefs = {
     { key = "gears",    label = "Gears",       icon = "Interface\\Icons\\INV_Misc_Gear_01" },
     { key = "settings", label = "Settings",    icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
+    { key = "sections", label = "Sections",    icon = "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" },
     { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
     { key = "popups",   label = "Popups",      icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
@@ -1458,6 +1459,190 @@ pages.settings = function(parent)
   demoBar:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
   demoBar:SetProgress(7, 10)
   y = y - 30
+
+  c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
+-- Page: Sections (collapsible sections + settings form helpers + dropdown auto-width)
+-- ============================================================================
+
+pages.sections = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+  local scroll, c = createPageFrame(f)
+
+  local y = 0
+
+  -- ---- CreateCollapsibleSection demos ------------------------------------
+  cw:CreateSectionHeader(c, "CreateCollapsibleSection", y)
+  y = y - 22
+
+  local sec1 = cw:CreateCollapsibleSection(c, {
+    title   = "Section A",
+    summary = "open by default; static content",
+  })
+  sec1:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  sec1:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, y)
+  do
+    local body = sec1.content:CreateFontString(nil, "OVERLAY")
+    body:SetFontObject(cw:GetFont("normal"))
+    body:SetPoint("TOPLEFT", sec1.content, "TOPLEFT", 0, 0)
+    body:SetPoint("RIGHT", sec1.content, "RIGHT", 0, 0)
+    body:SetJustifyH("LEFT")
+    body:SetWordWrap(true)
+    body:SetTextColor(unpack(T.text))
+    body:SetText("Section bodies render whatever you put into section.content. Width is fixed at construction; height comes from SetContentHeight, which the section uses to size itself plus its chrome.")
+    sec1:SetContentHeight(body:GetStringHeight() + 4)
+  end
+  y = y - sec1:GetConsumedHeight() - 4
+
+  local sec2 = cw:CreateCollapsibleSection(c, {
+    title          = "Section B",
+    summary        = "starts collapsed",
+    startCollapsed = true,
+  })
+  sec2:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  sec2:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, y)
+  do
+    local body = sec2.content:CreateFontString(nil, "OVERLAY")
+    body:SetFontObject(cw:GetFont("normal"))
+    body:SetPoint("TOPLEFT", sec2.content, "TOPLEFT", 0, 0)
+    body:SetPoint("RIGHT", sec2.content, "RIGHT", 0, 0)
+    body:SetJustifyH("LEFT")
+    body:SetWordWrap(true)
+    body:SetTextColor(unpack(T.text))
+    body:SetText("Click the header to expand. The chevron is the suite-wide icon registry's chevron-right / chevron-down (issue #9) — WoW's default fonts don't ship Unicode Geometric Shapes, so registered atlases stand in.")
+    sec2:SetContentHeight(body:GetStringHeight() + 4)
+  end
+  y = y - sec2:GetConsumedHeight() - 16
+
+  -- ---- Settings form helpers (live-stacked with y-cursor) ----------------
+  cw:CreateSectionHeader(c, "Settings Form Helpers", y)
+  y = y - 22
+
+  -- Wrap the helpers inside a collapsible section so the live-reflow story
+  -- (toggle the section / change font scale → rows reflow) is visible.
+  local formSection = cw:CreateCollapsibleSection(c, {
+    title   = "Form rows (CreateSettingsCheckbox / Button / Input)",
+    summary = "y-cursor stack; reflows on font change",
+  })
+  formSection:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  formSection:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, y)
+
+  -- Demo state lives on the section's content frame so it survives layout.
+  local demoState = { foo = true, bar = false, queueSize = 50, label = "Hello" }
+  local rowYs = {}  -- y-positions of stacked rows for reflow
+
+  local function relayoutFormRows()
+    local fy = 4
+    for _, r in ipairs(rowYs) do
+      r.row:ClearAllPoints()
+      r.row:SetPoint("TOPLEFT", formSection.content, "TOPLEFT", 0, -fy)
+      r.row:SetPoint("TOPRIGHT", formSection.content, "TOPRIGHT", 0, -fy)
+      fy = fy + r.row:GetConsumedHeight()
+    end
+    formSection:SetContentHeight(fy + 4)
+  end
+
+  local function pushRow(row)
+    rowYs[#rowYs + 1] = { row = row }
+  end
+
+  -- onHeightChanged plumbing: any row that reflows triggers the whole stack.
+  local cbRow = cw:CreateSettingsCheckbox(formSection.content, {
+    label       = "Enable foo",
+    description = "Toggles the foo subsystem. The description wraps when the row gets narrow.",
+    value       = demoState.foo,
+    onChange    = function(v) demoState.foo = v; cw:Print("Cogworks", "foo: " .. tostring(v)) end,
+    onHeightChanged = relayoutFormRows,
+  })
+  pushRow(cbRow)
+
+  local cbRow2 = cw:CreateSettingsCheckbox(formSection.content, {
+    label    = "Enable bar (no description)",
+    value    = demoState.bar,
+    onChange = function(v) demoState.bar = v; cw:Print("Cogworks", "bar: " .. tostring(v)) end,
+    onHeightChanged = relayoutFormRows,
+  })
+  pushRow(cbRow2)
+
+  local btnRow = cw:CreateSettingsButton(formSection.content, {
+    label       = "Reset demo state",
+    description = "Restores the demo defaults shown on this page.",
+    buttonText  = "Reset",
+    buttonWidth = 100,
+    onClick     = function()
+      demoState.foo, demoState.bar, demoState.queueSize, demoState.label = true, false, 50, "Hello"
+      cbRow:SetValue(true)
+      cbRow2:SetValue(false)
+      cw:Print("Cogworks", "demo state reset")
+    end,
+    onHeightChanged = relayoutFormRows,
+  })
+  pushRow(btnRow)
+
+  local inputRow = cw:CreateSettingsInput(formSection.content, {
+    label       = "Max queue size",
+    description = "Numeric input — commits on Enter or focus loss.",
+    value       = demoState.queueSize,
+    numeric     = true,
+    inputWidth  = 80,
+    maxLetters  = 5,
+    onChange    = function(v) demoState.queueSize = v; cw:Print("Cogworks", "queue size: " .. tostring(v)) end,
+    onHeightChanged = relayoutFormRows,
+  })
+  pushRow(inputRow)
+
+  local inputRow2 = cw:CreateSettingsInput(formSection.content, {
+    label       = "Free-form label",
+    description = "Text input.",
+    value       = demoState.label,
+    inputWidth  = 160,
+    onChange    = function(v) demoState.label = v; cw:Print("Cogworks", "label: " .. tostring(v)) end,
+    onHeightChanged = relayoutFormRows,
+  })
+  pushRow(inputRow2)
+
+  relayoutFormRows()
+  y = y - formSection:GetConsumedHeight() - 16
+
+  -- ---- CreateDropdown autoWidth comparison -------------------------------
+  cw:CreateSectionHeader(c, "CreateDropdown — autoWidth", y)
+  y = y - 22
+
+  local ddItems = {
+    { key = "s",   label = "Short" },
+    { key = "m",   label = "Medium-length entry" },
+    { key = "l",   label = "A much longer label that would clip a fixed dropdown" },
+    { key = "xl",  label = "An even longer label demonstrating the upper-clamp behavior" },
+    { key = "tn",  label = "tn" },
+  }
+
+  -- Fixed-width: legacy 4-arg signature, no opts
+  local fixedDD = cw:CreateDropdown(c, ddItems, "s", function(k) cw:Print("Cogworks", "fixed: " .. k) end)
+  fixedDD:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  local fixedLabel = c:CreateFontString(nil, "OVERLAY")
+  fixedLabel:SetFontObject(cw:GetFont("small"))
+  fixedLabel:SetPoint("LEFT", fixedDD, "RIGHT", 12, 0)
+  fixedLabel:SetTextColor(unpack(T.textDim))
+  fixedLabel:SetText("fixed 200px (legacy 4-arg signature)")
+  y = y - 36
+
+  -- Auto-width: opts.autoWidth
+  local autoDD = cw:CreateDropdown(c, ddItems, "s", function(k) cw:Print("Cogworks", "auto: " .. k) end, {
+    autoWidth = true,
+    minWidth  = 120,
+    maxWidth  = 360,
+  })
+  autoDD:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  local autoLabel = c:CreateFontString(nil, "OVERLAY")
+  autoLabel:SetFontObject(cw:GetFont("small"))
+  autoLabel:SetPoint("LEFT", autoDD, "RIGHT", 12, 0)
+  autoLabel:SetTextColor(unpack(T.textDim))
+  autoLabel:SetText("autoWidth (clamped 120 — 360px); refits on font change")
+  y = y - 50
 
   c:SetHeight(math.abs(y) + 20)
   return f
