@@ -1570,9 +1570,13 @@ pages.sections = function(parent)
   -- ---- CreateCollapsibleSection demos ------------------------------------
   addSectionHeader("CreateCollapsibleSection")
 
-  -- Build a section with a wrapping body FontString. The heightFn recomputes
-  -- body:GetStringHeight() each time relayout walks, so font-scale changes
-  -- flow through to the section's contentHeight without manual subscription.
+  -- Build a section with a wrapping body FontString. SetContentHeightFn
+  -- means applyLayout reads body:GetStringHeight() fresh on every layout
+  -- pass — so the post-show settle pass inside Sections.lua picks up the
+  -- wrapped height once WoW has rendered the frame, without us having to
+  -- overwrite a previously-correct stored height with a stale single-line
+  -- value (which is what the SetContentHeight pattern did when the body
+  -- was hidden mid-collapse).
   local function makeTextSection(opts, text)
     local section = cw:CreateCollapsibleSection(c, opts)
     local body = section.content:CreateFontString(nil, "OVERLAY")
@@ -1583,13 +1587,8 @@ pages.sections = function(parent)
     body:SetWordWrap(true)
     body:SetTextColor(unpack(T.text))
     body:SetText(text)
-    section:SetContentHeight(body:GetStringHeight() + 4)
-
-    local function freshHeight()
-      section:SetContentHeight(body:GetStringHeight() + 4)
-      return section:GetConsumedHeight()
-    end
-    return section, freshHeight
+    section:SetContentHeightFn(function() return body:GetStringHeight() + 4 end)
+    return section, function() return section:GetConsumedHeight() end
   end
 
   local sec1, sec1H = makeTextSection({
@@ -1619,7 +1618,10 @@ pages.sections = function(parent)
   local demoState = { foo = true, bar = false, queueSize = 50, label = "Hello" }
   local rowYs = {}
 
-  local function relayoutFormRows()
+  -- Anchor each row at its current y-cursor position. Row heights drive the
+  -- y-cursor — Forms.lua's row:GetConsumedHeight() returns row:GetHeight()
+  -- which is set by the row's own applyLayout pass.
+  local function anchorFormRows()
     local fy = 4
     for _, r in ipairs(rowYs) do
       r.row:ClearAllPoints()
@@ -1627,8 +1629,20 @@ pages.sections = function(parent)
       r.row:SetPoint("TOPRIGHT", formSection.content, "TOPRIGHT", 0, -fy)
       fy = fy + r.row:GetConsumedHeight()
     end
-    formSection:SetContentHeight(fy + 4)
-    relayout()  -- form-row height changes propagate to the page-level stack
+    return fy + 4
+  end
+
+  -- Section-level height = anchored row stack height. Returned fresh each
+  -- pass so the post-show settle inside Sections.lua picks up wrapped
+  -- description heights once they've measured.
+  formSection:SetContentHeightFn(anchorFormRows)
+
+  local function relayoutFormRows()
+    -- Triggers formSection's applyLayout, which calls anchorFormRows via
+    -- the contentHeightFn — that re-anchors rows AND updates the section
+    -- height in one pass. Then bubble up to the page-level stack.
+    formSection:SetContentHeightFn(anchorFormRows)
+    relayout()
   end
 
   local function pushRow(row)
@@ -1741,15 +1755,6 @@ pages.sections = function(parent)
   f._fontReflowOwner = fontReflowOwner
 
   relayout()
-  -- Settle pass. WoW resolves FontString wrapped heights asynchronously;
-  -- the first relayout reads single-line heights for body text whose
-  -- anchor chain only just resolved on the prior step. One OnUpdate tick
-  -- later GetStringHeight returns the real wrapped height — re-relayout
-  -- so sibling sections sit below the actual rendered body bounds.
-  f:SetScript("OnUpdate", function(self)
-    self:SetScript("OnUpdate", nil)
-    relayout()
-  end)
   return f
 end
 

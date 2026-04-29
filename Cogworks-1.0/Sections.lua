@@ -25,22 +25,31 @@ local function headerHeightFor(titleFs)
 end
 
 -- Returns a frame that wraps a clickable header + content area. Public surface:
---   section.content        : Frame for body widgets
+--   section.content          : Frame for body widgets
 --   section:SetCollapsed(b)
 --   section:IsCollapsed()
---   section:SetContentHeight(h) — call after laying out children
+--   section:SetContentHeight(h)        — static: stash a fixed height
+--   section:SetContentHeightFn(fn)     — dynamic: call fn() on every layout
+--                                        pass. Use this when the body is a
+--                                        wrapping FontString whose
+--                                        :GetStringHeight() only settles to
+--                                        the wrapped value after WoW has
+--                                        rendered the frame at least once.
 --   section:GetConsumedHeight()
 --
 -- opts:
---   title           string — header label  (required)
---   summary         string — dim subtitle to the right of the title
---   width           number — section width; defaults to parent width
---   startCollapsed  bool   — initial state; default false
---   onToggle        fn(c)  — fired only when the user clicks the header
---   onLayoutChanged fn(h)  — fired whenever the section's consumed height
---                            changes for any reason (toggle, font reflow,
---                            SetContentHeight). Use this when the caller
---                            owns a sibling stack that needs reflowing.
+--   title            string — header label  (required)
+--   summary          string — dim subtitle to the right of the title
+--   width            number — section width; defaults to parent width
+--   startCollapsed   bool   — initial state; default false
+--   onToggle         fn(c)  — fired only when the user clicks the header
+--   onLayoutChanged  fn(h)  — fired whenever the section's consumed height
+--                             changes (toggle, font reflow, SetContentHeight,
+--                             contentHeightFn re-read, post-show settle).
+--                             Use this when the caller owns a sibling stack
+--                             that needs reflowing.
+--   contentHeightFn  fn()→n — convenience: same as calling
+--                             SetContentHeightFn(fn) after construction.
 function lib:CreateCollapsibleSection(parent, opts)
   assert(type(opts) == "table" and opts.title, "CreateCollapsibleSection: opts.title required")
   local T = self.Theme
@@ -94,11 +103,26 @@ function lib:CreateCollapsibleSection(parent, opts)
   section.content = content
 
   -- Internal state
-  local collapsed = opts.startCollapsed and true or false
-  local contentHeight = 0
+  local collapsed       = opts.startCollapsed and true or false
+  local contentHeight   = 0                       -- static height (legacy API)
+  local contentHeightFn = opts.contentHeightFn    -- dynamic height (preferred)
+  local settlePending   = false
 
   local function refreshArrow()
     self:ApplyIcon(arrow, collapsed and "chevron-right" or "chevron-down")
+  end
+
+  -- Effective content height. When the caller has registered a heightFn we
+  -- always call it fresh — this is critical for wrapping-text bodies whose
+  -- :GetStringHeight() doesn't return the wrapped value until WoW has
+  -- rendered the frame at least once. The static `contentHeight` remains
+  -- as a fallback for callers using SetContentHeight directly.
+  local function effectiveContentHeight()
+    if contentHeightFn then
+      local h = tonumber(contentHeightFn()) or 0
+      return math.max(0, h)
+    end
+    return contentHeight
   end
 
   -- Compute the section's full consumed height from current internal state.
@@ -106,11 +130,12 @@ function lib:CreateCollapsibleSection(parent, opts)
   -- callers always read the most recent value without depending on a
   -- separate layout pass to settle :GetHeight().
   local function computeConsumedHeight()
-    local hH = headerHeightFor(titleFs)
-    if collapsed or contentHeight <= 0 then
+    local hH   = headerHeightFor(titleFs)
+    local effH = effectiveContentHeight()
+    if collapsed or effH <= 0 then
       return hH
     else
-      return hH + CONTENT_PAD_TOP + contentHeight + CONTENT_PAD_BOT
+      return hH + CONTENT_PAD_TOP + effH + CONTENT_PAD_BOT
     end
   end
 
@@ -122,10 +147,11 @@ function lib:CreateCollapsibleSection(parent, opts)
     if applying then return end
     applying = true
 
-    local hH = headerHeightFor(titleFs)
+    local hH   = headerHeightFor(titleFs)
+    local effH = effectiveContentHeight()
     header:SetHeight(hH)
 
-    if collapsed or contentHeight <= 0 then
+    if collapsed or effH <= 0 then
       content:Hide()
       section:SetHeight(hH)
     else
@@ -133,12 +159,27 @@ function lib:CreateCollapsibleSection(parent, opts)
       content:ClearAllPoints()
       content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", CONTENT_INSET, -CONTENT_PAD_TOP)
       content:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -CONTENT_INSET, -CONTENT_PAD_TOP)
-      content:SetHeight(contentHeight)
-      section:SetHeight(hH + CONTENT_PAD_TOP + contentHeight + CONTENT_PAD_BOT)
+      content:SetHeight(effH)
+      section:SetHeight(hH + CONTENT_PAD_TOP + effH + CONTENT_PAD_BOT)
     end
     refreshArrow()
 
+    -- Settle pass: when content has just been (or is currently) shown, WoW
+    -- may not have measured wrapped FontString heights yet. Schedule a
+    -- one-shot OnUpdate to re-run applyLayout on the next render tick;
+    -- with contentHeightFn the re-run will pick up the settled value and
+    -- resize the section accordingly. settlePending is reset AFTER the
+    -- re-applyLayout to avoid scheduling a second settle from inside the
+    -- first one.
     applying = false
+    if not collapsed and effH > 0 and not settlePending and contentHeightFn then
+      settlePending = true
+      section:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", nil)
+        applyLayout()
+        settlePending = false
+      end)
+    end
     if opts.onLayoutChanged then opts.onLayoutChanged(computeConsumedHeight()) end
   end
 
@@ -158,6 +199,11 @@ function lib:CreateCollapsibleSection(parent, opts)
     local newH = math.max(0, tonumber(h) or 0)
     if newH == contentHeight then return end
     contentHeight = newH
+    applyLayout()
+  end
+
+  function section:SetContentHeightFn(fn)
+    contentHeightFn = fn
     applyLayout()
   end
 
