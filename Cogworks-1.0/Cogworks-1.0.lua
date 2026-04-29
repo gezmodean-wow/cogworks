@@ -500,7 +500,13 @@ end
 --     Cogworks:RegisterCogMinimapButton(addonName, dataobj, FlipQueueDB.minimap)
 --   end
 
-local COG_BORDER_SIZE = 53
+-- LDBIcon's default minimap button is ~31px. CogBorder.tga's silhouette
+-- fills nearly the full 128×128 texture rect (much denser than LDBIcon's
+-- own gold-ring asset, which is mostly transparent center), so rendering
+-- it at the LDBIcon overlay's 53×53 footprint makes the gear visually
+-- ~70% larger than the button. 32×32 sits the gear just past the button
+-- edge — same value Tally tuned to before TLY-003 adopted this helper.
+local COG_BORDER_SIZE = 32
 local TRACKING_BORDER_FILE_ID = 136430
 local TRACKING_BORDER_PATH    = "Interface\\Minimap\\MiniMap-TrackingBorder"
 
