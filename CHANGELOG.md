@@ -2,6 +2,14 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [Unreleased]
+
+Bumps MINOR from `12` to `13`. Phase A primitives for the FlipQueue migration (#1).
+
+### Added
+- **Settings form helpers** (`Cogworks-1.0/Forms.lua`) — `lib:CreateSettingsCheckbox(parent, opts)`, `lib:CreateSettingsButton(parent, opts)`, `lib:CreateSettingsInput(parent, opts)`. Labeled-row variants of the base primitives. Each returns `(row, consumedHeight)` for y-cursor auto-layout. All rows re-font and re-lay on `SettingsChanged` (`fontScale` / `fontFamily`); callers wanting a stack reflow can subscribe via `opts.onHeightChanged` or re-walk via `row:GetConsumedHeight()`. (#1)
+- **`lib:CreateDropdown` auto-width option** — additive 5th argument `opts` accepting `autoWidth` (bool), `minWidth`, `maxWidth`, `width`. With `autoWidth = true`, the dropdown measures each item's label and fits to the widest, clamped by min/max. Re-fits on `SetItems` and on `SettingsChanged` font changes. Existing callers using the four-positional-arg signature are unaffected. (#1)
+
 ## [0.10.0] — Embedded-layout minimap fix, icon registry, gear assembly chrome
 
 Bumps MINOR from `9` to `12`. Resolves issues #9, #10, #11, #13.

@@ -17,5 +17,6 @@
     <Script file="API.lua" />
     <Script file="Icons.lua" />
     <Script file="Sections.lua" />
+    <Script file="Forms.lua" />
 
 </Ui>

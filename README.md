@@ -17,7 +17,7 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 
 - **Event bus** — a shared `CallbackHandler`-backed registry with a canonical event list (`SaleLogged`, `CraftCompleted`, `ResetDue`, `InventoryChanged`, `GoldChanged`, ...) so cogs can signal each other without hard dependencies
 - **Theme constants** — the dark + gold + arcane-purple palette used across every cog, plus backdrop templates
-- **UI widget factories** — `CreateButton`, `CreateCheckbox`, `CreateIconButton`, `CreateSectionHeader`, `CreateProgressBar`, `CreateNavButton` / `SetNavButtonActive` — themed widgets that every cog can use instead of duplicating the same dark+gold UI code
+- **UI widget factories** — `CreateButton`, `CreateCheckbox`, `CreateIconButton`, `CreateSectionHeader`, `CreateProgressBar`, `CreateNavButton` / `SetNavButtonActive`, `CreateDropdown` (with optional `opts.autoWidth` to fit the widest item), `CreateScrollTable`, `CreatePopup` — themed widgets that every cog can use instead of duplicating the same dark+gold UI code
 - **Character-key helpers** — canonical `"Name-RealmNormalized"` keys that match Syndicator's convention so cogworks data and Syndicator data can be cross-referenced without a translation layer
 - **Addon registry** — each cog registers itself on load; any cog can enumerate its installed siblings for About panels or cross-promotion
 - **Syndicator bridge** — a capability detector so cogs that consume Syndicator share one code path
@@ -25,6 +25,8 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 - **Realm helpers** (`Realms.lua`) — `NormalizeAccents`, `NormalizeRealmKey`, `RealmMatches`, `RealmsOverlap` — accent-insensitive Latin normalization and connected-realm group matching for cross-character / cross-realm rollups
 - **Public-API registry** (`API.lua`) — `RegisterAPI`, `GetAPI`, `WhenAPIReady`, `GetRegisteredAPIs` — versioned cross-cog API contracts so a producer cog can publish a typed surface (e.g. Tally's `GetItemResearch`) and consumers can negotiate `major.minor` compatibility, with multi-major coexistence for transition windows
 - **Collapsible section** (`Sections.lua`) — `CreateCollapsibleSection` — clickable header + body frame with auto-layout heights, summary text, and a font-scale-aware relayout on `SettingsChanged`
+- **Settings form helpers** (`Forms.lua`) — `CreateSettingsCheckbox`, `CreateSettingsButton`, `CreateSettingsInput` — labeled-row variants of the base primitives that return `(row, consumedHeight)` so settings pages can stack rows with a y-cursor; all rows re-font and re-lay on `SettingsChanged`
+- **Suite-wide icon registry** (`Icons.lua`) — `RegisterIcon`, `ApplyIcon`, `HasIcon` — semantic icon names (`chevron-right`, `chevron-down`, ...) so widgets ask for a known-working visual once instead of rediscovering the "WoW default fonts don't include Geometric Shapes" pitfall every time
 - **Print helpers** — branded per-cog chat prefixes
 
 ## Suite members

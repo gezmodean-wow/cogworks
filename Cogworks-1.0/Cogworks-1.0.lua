@@ -25,7 +25,7 @@ assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires C
 -- because every consumer ships the same external, the path resolves either way.
 local LIB_LOADER_ADDON = ...
 
-local MAJOR, MINOR = "Cogworks-1.0", 12
+local MAJOR, MINOR = "Cogworks-1.0", 13
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -1244,10 +1244,22 @@ end
 -- A themed dropdown selector. Items is a list of {key, label} tables.
 -- onChange(key, label) fires when the user picks a new value.
 
-function lib:CreateDropdown(parent, items, selectedKey, onChange)
+-- opts (5th arg, optional) — extends the legacy positional signature additively.
+--   opts.width      — explicit fixed width (overrides autoWidth)
+--   opts.autoWidth  — when true, fits the dropdown to the widest item label
+--                     (clamped by minWidth / maxWidth) and re-fits on SetItems
+--                     and on fontScale / fontFamily change
+--   opts.minWidth   — auto-width floor (default 80)
+--   opts.maxWidth   — auto-width ceiling (default 600)
+function lib:CreateDropdown(parent, items, selectedKey, onChange, opts)
+  opts = opts or {}
   local T = self.Theme
   local dd = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-  dd:SetSize(200, 26)
+  local explicitWidth = opts.width
+  local autoWidth     = opts.autoWidth and not explicitWidth
+  local minWidth      = opts.minWidth or 80
+  local maxWidth      = opts.maxWidth or 600
+  dd:SetSize(explicitWidth or 200, 26)
   dd:SetBackdrop(self.BackdropSmall)
   dd:SetBackdropColor(0.15, 0.15, 0.2, 1)
   dd:SetBackdropBorderColor(unpack(T.border))
@@ -1319,6 +1331,27 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange)
       _fontObjects[foKey] = fo
     end
     return _fontObjects[foKey]
+  end
+
+  -- Auto-width: measure each label with its FontObject, take the max, add
+  -- chrome padding for left inset + right arrow space, clamp by min/max.
+  local _measureFs
+  local function applyAutoWidth()
+    if not autoWidth then return end
+    if not _measureFs then
+      _measureFs = dd:CreateFontString(nil, "ARTWORK")
+      _measureFs:Hide()
+    end
+    local maxW = 0
+    for _, item in ipairs(dd._items) do
+      _measureFs:SetFontObject(getItemFontObject(item))
+      _measureFs:SetText(item.label or "")
+      local w = _measureFs:GetStringWidth()
+      if w > maxW then maxW = w end
+    end
+    -- 8 left inset + 20 right arrow gutter, plus a bit of breathing room
+    local target = math.max(minWidth, math.min(maxWidth, maxW + 36))
+    dd:SetWidth(target)
   end
 
   local function buildMenu()
@@ -1411,6 +1444,7 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange)
   function dd:SetItems(newItems)
     dd._items = newItems
     updateLabel()
+    applyAutoWidth()
   end
 
   function dd:SetSelectedKey(key)
@@ -1422,6 +1456,18 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange)
     return dd._selectedKey
   end
 
+  -- Re-fit when font scale / family changes — rendered widths change with
+  -- the FontObject, so a snapshot taken at construction time goes stale.
+  if autoWidth then
+    local owner = {}
+    self.RegisterCallback(owner, self.Events.SettingsChanged, function(_, key)
+      if key == "fontScale" or key == "fontFamily" then
+        applyAutoWidth()
+      end
+    end)
+  end
+
+  applyAutoWidth()
   return dd
 end
 
