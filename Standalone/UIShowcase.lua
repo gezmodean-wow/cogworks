@@ -949,21 +949,48 @@ pages.layout = function(parent)
   f:SetAllPoints()
   local scroll, c = createPageFrame(f)
 
-  local y = 0
+  -- Same y-stack pattern as pages.sections — each section participates in
+  -- a single relayout walk so toggling and font-scale changes never leave
+  -- siblings in stale positions.
+  local items = {}
+  local function add(frame, heightFn, gapAfter)
+    items[#items + 1] = { f = frame, h = heightFn, gap = gapAfter or 8 }
+  end
 
-  -- Backdrop demos
-  cw:CreateSectionHeader(c, "Backdrop Templates", y)
-  y = y - 24
+  local function relayout()
+    local y = 0
+    for _, it in ipairs(items) do
+      it.f:ClearAllPoints()
+      it.f:SetPoint("TOPLEFT", c, "TOPLEFT", 8, -y)
+      it.f:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, -y)
+      y = y + it.h() + it.gap
+    end
+    c:SetHeight(y + 20)
+  end
 
-  local bdLabel1 = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  bdLabel1:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  -- Build a section, add it to the stack, return both the section and a
+  -- handle to its content frame so the caller can populate it.
+  local function makeSection(opts)
+    local section = cw:CreateCollapsibleSection(c, opts)
+    return section, section.content
+  end
+
+  -- ---- Backdrop Templates ------------------------------------------------
+  local bdSection, bdContent = makeSection({
+    title           = "Backdrop Templates",
+    summary         = "cw.Backdrop and cw.BackdropSmall, themed",
+    onLayoutChanged = function() relayout() end,
+  })
+
+  local bdLabel1 = bdContent:CreateFontString(nil, "OVERLAY")
+  bdLabel1:SetFontObject(cw:GetFont("normal"))
+  bdLabel1:SetPoint("TOPLEFT", bdContent, "TOPLEFT", 0, 0)
   bdLabel1:SetText("cw.Backdrop (16px edge)")
   bdLabel1:SetTextColor(unpack(T.text))
-  y = y - 6
 
-  local bdDemo1 = CreateFrame("Frame", nil, c, "BackdropTemplate")
+  local bdDemo1 = CreateFrame("Frame", nil, bdContent, "BackdropTemplate")
   bdDemo1:SetSize(280, 60)
-  bdDemo1:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  bdDemo1:SetPoint("TOPLEFT", bdLabel1, "BOTTOMLEFT", 0, -4)
   bdDemo1:SetBackdrop(cw.Backdrop)
   bdDemo1:SetBackdropColor(unpack(T.bg))
   bdDemo1:SetBackdropBorderColor(unpack(T.border))
@@ -971,17 +998,16 @@ pages.layout = function(parent)
   bdText1:SetPoint("CENTER")
   bdText1:SetText("Standard backdrop (panels, frames)")
   bdText1:SetTextColor(unpack(T.textDim))
-  y = y - 76
 
-  local bdLabel2 = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  bdLabel2:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  local bdLabel2 = bdContent:CreateFontString(nil, "OVERLAY")
+  bdLabel2:SetFontObject(cw:GetFont("normal"))
+  bdLabel2:SetPoint("TOPLEFT", bdDemo1, "BOTTOMLEFT", 0, -10)
   bdLabel2:SetText("cw.BackdropSmall (10px edge)")
   bdLabel2:SetTextColor(unpack(T.text))
-  y = y - 6
 
-  local bdDemo2 = CreateFrame("Frame", nil, c, "BackdropTemplate")
+  local bdDemo2 = CreateFrame("Frame", nil, bdContent, "BackdropTemplate")
   bdDemo2:SetSize(280, 40)
-  bdDemo2:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  bdDemo2:SetPoint("TOPLEFT", bdLabel2, "BOTTOMLEFT", 0, -4)
   bdDemo2:SetBackdrop(cw.BackdropSmall)
   bdDemo2:SetBackdropColor(unpack(T.header))
   bdDemo2:SetBackdropBorderColor(unpack(T.border))
@@ -989,16 +1015,23 @@ pages.layout = function(parent)
   bdText2:SetPoint("CENTER")
   bdText2:SetText("Small backdrop (buttons, controls)")
   bdText2:SetTextColor(unpack(T.textDim))
-  y = y - 56
 
-  -- Nested panels
-  y = y - 10
-  cw:CreateSectionHeader(c, "Nested Panels", y)
-  y = y - 24
+  add(bdSection, function()
+    bdSection:SetContentHeight(bdLabel1:GetStringHeight() + 4 + 60 + 10
+                            + bdLabel2:GetStringHeight() + 4 + 40)
+    return bdSection:GetConsumedHeight()
+  end, 8)
 
-  local outer = CreateFrame("Frame", nil, c, "BackdropTemplate")
+  -- ---- Nested Panels -----------------------------------------------------
+  local nestedSection, nestedContent = makeSection({
+    title           = "Nested Panels",
+    summary         = "outer + inner with theme bg variants",
+    onLayoutChanged = function() relayout() end,
+  })
+
+  local outer = CreateFrame("Frame", nil, nestedContent, "BackdropTemplate")
   outer:SetSize(360, 140)
-  outer:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  outer:SetPoint("TOPLEFT", nestedContent, "TOPLEFT", 0, 0)
   outer:SetBackdrop(cw.Backdrop)
   outer:SetBackdropColor(unpack(T.bg))
   outer:SetBackdropBorderColor(unpack(T.border))
@@ -1030,16 +1063,19 @@ pages.layout = function(parent)
   i2Text:SetText("sidebar bg")
   i2Text:SetTextColor(unpack(T.textDim))
 
-  y = y - 160
+  nestedSection:SetContentHeight(140)
+  add(nestedSection, function() return nestedSection:GetConsumedHeight() end, 8)
 
-  -- Row styling demo
-  y = y - 10
-  cw:CreateSectionHeader(c, "Row Styling", y)
-  y = y - 24
+  -- ---- Row Styling -------------------------------------------------------
+  local rowSection, rowContent = makeSection({
+    title           = "Row Styling",
+    summary         = "alt rows + hover highlight",
+    onLayoutChanged = function() relayout() end,
+  })
 
-  local rowPanel = CreateFrame("Frame", nil, c, "BackdropTemplate")
+  local rowPanel = CreateFrame("Frame", nil, rowContent, "BackdropTemplate")
   rowPanel:SetSize(360, 120)
-  rowPanel:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  rowPanel:SetPoint("TOPLEFT", rowContent, "TOPLEFT", 0, 0)
   rowPanel:SetBackdrop(cw.BackdropSmall)
   rowPanel:SetBackdropColor(unpack(T.bg))
   rowPanel:SetBackdropBorderColor(unpack(T.border))
@@ -1071,12 +1107,15 @@ pages.layout = function(parent)
     rowText:SetTextColor(unpack(T.text))
   end
 
-  y = y - 140
+  rowSection:SetContentHeight(120)
+  add(rowSection, function() return rowSection:GetConsumedHeight() end, 8)
 
-  -- Font showcase
-  y = y - 10
-  cw:CreateSectionHeader(c, "Standard WoW Fonts", y)
-  y = y - 22
+  -- ---- Standard WoW Fonts ------------------------------------------------
+  local fontSection, fontContent = makeSection({
+    title           = "Standard WoW Fonts",
+    summary         = "reference for fixed game fonts (do not respect cw.fontScale)",
+    onLayoutChanged = function() relayout() end,
+  })
 
   local fonts = {
     { "GameFontNormal",          "GameFontNormal — body text" },
@@ -1088,15 +1127,28 @@ pages.layout = function(parent)
     { "GameFontDisableSmall",    "GameFontDisableSmall — small disabled" },
   }
 
-  for _, fd in ipairs(fonts) do
-    local fs = c:CreateFontString(nil, "OVERLAY", fd[1])
-    fs:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  local fontFs = {}
+  local prev = fontContent
+  for i, fd in ipairs(fonts) do
+    local fs = fontContent:CreateFontString(nil, "OVERLAY", fd[1])
+    if i == 1 then
+      fs:SetPoint("TOPLEFT", prev, "TOPLEFT", 0, 0)
+    else
+      fs:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -2)
+    end
     fs:SetText(fd[2])
-    y = y - 20
+    fontFs[i] = fs
+    prev = fs
   end
 
-  y = y - 10
-  c:SetHeight(math.abs(y) + 20)
+  add(fontSection, function()
+    local h = 0
+    for _, fs in ipairs(fontFs) do h = h + fs:GetStringHeight() + 2 end
+    fontSection:SetContentHeight(h)
+    return fontSection:GetConsumedHeight()
+  end, 16)
+
+  relayout()
   return f
 end
 
