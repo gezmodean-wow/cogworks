@@ -69,6 +69,16 @@ When the user mentions a bug, regression, feature idea, or improvement during no
 
 Commit messages referencing a tracked issue should use `<type>(<ID>): <subject>` — e.g. `fix(COG-004): guard RegisterAddon against nil namespace`.
 
+### Player-facing close summaries
+
+When closing a player-visible issue, add a `## Player summary` section to the issue body before clicking close. One short sentence, plain language — what changed for the player, not what code changed.
+
+Scribe pulls this text into:
+- The close announcement posted into the linked Discord thread.
+- The bulleted "What changed" list in the next release announcement.
+
+If you forgot before closing, you can put a fenced `release-notes` code block in the closing comment instead — same convention, first paragraph wins. Issues with no summary in either place render as `⚠️ no summary written` in the staff release draft; fix by editing the issue body and re-running `/release-redraft`.
+
 ## Cross-cog feature requests
 
 Cogworks is a shared library, so it's the **most common target** for cross-cog asks: when an agent working in FlipQueue / Tempo / Maxcraft / Tally spots a gap they need filled here, they file an Issue on `gezmodean-wow/cogworks` and mention their cog as the source. Triage those as cross-cog asks — they're a real signal that a library capability is missing.
