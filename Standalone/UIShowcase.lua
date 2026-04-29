@@ -1473,18 +1473,51 @@ pages.sections = function(parent)
   f:SetAllPoints()
   local scroll, c = createPageFrame(f)
 
-  local y = 0
+  -- Page-level y-stack: each item is { frame, heightFn, gapAfter, fullWidth }.
+  -- relayout() re-walks the stack so a collapsible section toggling open or
+  -- closed pushes the items below it down/up instead of overlapping them.
+  local items = {}
+  local function add(frame, heightFn, gapAfter, fullWidth)
+    items[#items + 1] = {
+      f          = frame,
+      h          = heightFn,
+      gap        = gapAfter or 4,
+      fullWidth  = fullWidth ~= false,  -- default true
+    }
+  end
+
+  local function relayout()
+    local y = 0
+    for _, it in ipairs(items) do
+      it.f:ClearAllPoints()
+      it.f:SetPoint("TOPLEFT", c, "TOPLEFT", 8, -y)
+      if it.fullWidth then
+        it.f:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, -y)
+      end
+      y = y + it.h() + it.gap
+    end
+    c:SetHeight(y + 20)
+  end
+
+  -- Helper: a section header that participates in the y-stack.
+  local function addSectionHeader(text, gapAfter)
+    local h = c:CreateFontString(nil, "OVERLAY")
+    h:SetFontObject(cw.Fonts.header)
+    h:SetJustifyH("LEFT")
+    h:SetText(text:upper())
+    h:SetTextColor(unpack(T.textDim))
+    add(h, function() return 16 end, gapAfter or 6)
+    return h
+  end
 
   -- ---- CreateCollapsibleSection demos ------------------------------------
-  cw:CreateSectionHeader(c, "CreateCollapsibleSection", y)
-  y = y - 22
+  addSectionHeader("CreateCollapsibleSection")
 
   local sec1 = cw:CreateCollapsibleSection(c, {
-    title   = "Section A",
-    summary = "open by default; static content",
+    title    = "Section A",
+    summary  = "open by default; toggling reflows the page below",
+    onToggle = function() relayout() end,
   })
-  sec1:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  sec1:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, y)
   do
     local body = sec1.content:CreateFontString(nil, "OVERLAY")
     body:SetFontObject(cw:GetFont("normal"))
@@ -1496,15 +1529,14 @@ pages.sections = function(parent)
     body:SetText("Section bodies render whatever you put into section.content. Width is fixed at construction; height comes from SetContentHeight, which the section uses to size itself plus its chrome.")
     sec1:SetContentHeight(body:GetStringHeight() + 4)
   end
-  y = y - sec1:GetConsumedHeight() - 4
+  add(sec1, function() return sec1:GetConsumedHeight() end, 4)
 
   local sec2 = cw:CreateCollapsibleSection(c, {
     title          = "Section B",
-    summary        = "starts collapsed",
+    summary        = "starts collapsed; click to expand",
     startCollapsed = true,
+    onToggle       = function() relayout() end,
   })
-  sec2:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  sec2:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, y)
   do
     local body = sec2.content:CreateFontString(nil, "OVERLAY")
     body:SetFontObject(cw:GetFont("normal"))
@@ -1513,27 +1545,22 @@ pages.sections = function(parent)
     body:SetJustifyH("LEFT")
     body:SetWordWrap(true)
     body:SetTextColor(unpack(T.text))
-    body:SetText("Click the header to expand. The chevron is the suite-wide icon registry's chevron-right / chevron-down (issue #9) — WoW's default fonts don't ship Unicode Geometric Shapes, so registered atlases stand in.")
+    body:SetText("The chevron is the suite-wide icon registry's chevron-right / chevron-down (issue #9) — WoW's default fonts don't ship Unicode Geometric Shapes, so registered atlases stand in.")
     sec2:SetContentHeight(body:GetStringHeight() + 4)
   end
-  y = y - sec2:GetConsumedHeight() - 16
+  add(sec2, function() return sec2:GetConsumedHeight() end, 16)
 
   -- ---- Settings form helpers (live-stacked with y-cursor) ----------------
-  cw:CreateSectionHeader(c, "Settings Form Helpers", y)
-  y = y - 22
+  addSectionHeader("Settings Form Helpers")
 
-  -- Wrap the helpers inside a collapsible section so the live-reflow story
-  -- (toggle the section / change font scale → rows reflow) is visible.
   local formSection = cw:CreateCollapsibleSection(c, {
-    title   = "Form rows (CreateSettingsCheckbox / Button / Input)",
-    summary = "y-cursor stack; reflows on font change",
+    title    = "Form rows (CreateSettingsCheckbox / Button / Input)",
+    summary  = "y-cursor stack; reflows on font change and on toggle",
+    onToggle = function() relayout() end,
   })
-  formSection:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  formSection:SetPoint("TOPRIGHT", c, "TOPRIGHT", -8, y)
 
-  -- Demo state lives on the section's content frame so it survives layout.
   local demoState = { foo = true, bar = false, queueSize = 50, label = "Hello" }
-  local rowYs = {}  -- y-positions of stacked rows for reflow
+  local rowYs = {}
 
   local function relayoutFormRows()
     local fy = 4
@@ -1544,13 +1571,13 @@ pages.sections = function(parent)
       fy = fy + r.row:GetConsumedHeight()
     end
     formSection:SetContentHeight(fy + 4)
+    relayout()  -- form-row height changes propagate to the page-level stack
   end
 
   local function pushRow(row)
     rowYs[#rowYs + 1] = { row = row }
   end
 
-  -- onHeightChanged plumbing: any row that reflows triggers the whole stack.
   local cbRow = cw:CreateSettingsCheckbox(formSection.content, {
     label       = "Enable foo",
     description = "Toggles the foo subsystem. The description wraps when the row gets narrow.",
@@ -1606,11 +1633,10 @@ pages.sections = function(parent)
   pushRow(inputRow2)
 
   relayoutFormRows()
-  y = y - formSection:GetConsumedHeight() - 16
+  add(formSection, function() return formSection:GetConsumedHeight() end, 16)
 
   -- ---- CreateDropdown autoWidth comparison -------------------------------
-  cw:CreateSectionHeader(c, "CreateDropdown — autoWidth", y)
-  y = y - 22
+  addSectionHeader("CreateDropdown — autoWidth")
 
   local ddItems = {
     { key = "s",   label = "Short" },
@@ -1620,31 +1646,33 @@ pages.sections = function(parent)
     { key = "tn",  label = "tn" },
   }
 
-  -- Fixed-width: legacy 4-arg signature, no opts
-  local fixedDD = cw:CreateDropdown(c, ddItems, "s", function(k) cw:Print("Cogworks", "fixed: " .. k) end)
-  fixedDD:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  local fixedLabel = c:CreateFontString(nil, "OVERLAY")
+  -- Wrap each dropdown in a row frame so the y-stack can manage it cleanly.
+  local fixedRow = CreateFrame("Frame", nil, c)
+  fixedRow:SetHeight(28)
+  local fixedDD = cw:CreateDropdown(fixedRow, ddItems, "s",
+    function(k) cw:Print("Cogworks", "fixed: " .. k) end)
+  fixedDD:SetPoint("LEFT", fixedRow, "LEFT", 0, 0)
+  local fixedLabel = fixedRow:CreateFontString(nil, "OVERLAY")
   fixedLabel:SetFontObject(cw:GetFont("small"))
   fixedLabel:SetPoint("LEFT", fixedDD, "RIGHT", 12, 0)
   fixedLabel:SetTextColor(unpack(T.textDim))
   fixedLabel:SetText("fixed 200px (legacy 4-arg signature)")
-  y = y - 36
+  add(fixedRow, function() return 28 end, 8, false)
 
-  -- Auto-width: opts.autoWidth
-  local autoDD = cw:CreateDropdown(c, ddItems, "s", function(k) cw:Print("Cogworks", "auto: " .. k) end, {
-    autoWidth = true,
-    minWidth  = 120,
-    maxWidth  = 360,
-  })
-  autoDD:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
-  local autoLabel = c:CreateFontString(nil, "OVERLAY")
+  local autoRow = CreateFrame("Frame", nil, c)
+  autoRow:SetHeight(28)
+  local autoDD = cw:CreateDropdown(autoRow, ddItems, "s",
+    function(k) cw:Print("Cogworks", "auto: " .. k) end,
+    { autoWidth = true, minWidth = 120, maxWidth = 360 })
+  autoDD:SetPoint("LEFT", autoRow, "LEFT", 0, 0)
+  local autoLabel = autoRow:CreateFontString(nil, "OVERLAY")
   autoLabel:SetFontObject(cw:GetFont("small"))
   autoLabel:SetPoint("LEFT", autoDD, "RIGHT", 12, 0)
   autoLabel:SetTextColor(unpack(T.textDim))
   autoLabel:SetText("autoWidth (clamped 120 — 360px); refits on font change")
-  y = y - 50
+  add(autoRow, function() return 28 end, 24, false)
 
-  c:SetHeight(math.abs(y) + 20)
+  relayout()
   return f
 end
 
