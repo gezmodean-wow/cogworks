@@ -764,12 +764,17 @@ local EDGE_PERIOD = 30
 -- apexes above the core (between Tempo↔hub and hub↔FlipQueue respectively).
 -- Vertical centering chosen so content extents are roughly symmetric
 -- around y = 0 (core trio sits below center, edges sit above center).
+-- Edge-gear positions are tuned so each edge meshes with both its core
+-- neighbour and the hub: distance(edge, core) ≈ EDGE_RING_SIZE/2 + CORE_RING_SIZE/2
+-- and distance(edge, hub) ≈ EDGE_RING_SIZE/2 + HUB_RING_SIZE/2, both with the
+-- same ~5 px overlap as the CW↔FQ↔TM mesh. Earlier values floated the edges
+-- well above the core; the triangle apex was visually disconnected.
 local CLUSTER_POSITIONS = {
   Cogworks  = { x =   0, y = -21 },
   FlipQueue = { x =  54, y = -21 },
   Tempo     = { x = -54, y = -21 },
-  Maxcraft  = { x = -27, y =  31 },
-  Tally     = { x =  27, y =  31 },
+  Maxcraft  = { x = -30, y =  17 },
+  Tally     = { x =  30, y =  17 },
 }
 local CLUSTER_FRAME_W, CLUSTER_FRAME_H = 180, 120
 local ROW_SPACING = 8
@@ -1365,7 +1370,19 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange, opts)
 
     menu:SetSize(menuW, menuH)
     menu:ClearAllPoints()
-    menu:SetPoint("TOPLEFT", dd, "BOTTOMLEFT", 0, -2)
+    -- Open below by default; flip up when there isn't room below the dropdown
+    -- and there's more space above (bottom-of-frame / bottom-of-screen case).
+    local ddBottom    = dd:GetBottom()
+    local ddTop       = dd:GetTop()
+    local screenH     = UIParent:GetHeight()
+    local spaceBelow  = ddBottom or screenH
+    local spaceAbove  = ddTop and (screenH - ddTop) or 0
+    local fitsBelow   = spaceBelow >= menuH + 4
+    if fitsBelow or spaceBelow >= spaceAbove then
+      menu:SetPoint("TOPLEFT", dd, "BOTTOMLEFT", 0, -2)
+    else
+      menu:SetPoint("BOTTOMLEFT", dd, "TOPLEFT", 0, 2)
+    end
     menuContent:SetWidth(menuW - 8)
     menuContent:SetHeight(count * itemH)
     menuScroll:SetVerticalScroll(0)
