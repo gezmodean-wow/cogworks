@@ -2,6 +2,20 @@
 
 This plan lets the FlipQueue agent migrate from hardcoded theme values and inline widget creation to the shared Cogworks-1.0 UI primitives. FlipQueue is the biggest win because it has **zero shared theme table** — every color is hardcoded inline across 10+ UI files.
 
+## Status update — primitives now available (2026-04-28, Cogworks v0.10.0 + MINOR 13 in flight)
+
+The Cogworks library has grown well beyond what Phases 1–3 of this doc target. Newly available primitives the FlipQueue migration should use:
+
+- **`cw:CreateScrollTable(parent, columns)`** — shipped, with column sortable/resizable/format, per-row `_rowColor`, `_icon`, `_tooltipText`, `_tooltipExtra`. Replace FlipQueue's local `UI/ScrollTable.lua` entirely (it was previously listed as "stays in FlipQueue"; that's now stale).
+- **`cw:CreateCollapsibleSection(parent, opts)`** (`Cogworks-1.0/Sections.lua`) — clickable header + body; persists collapsed state if the caller wires it up. Use anywhere FlipQueue currently rolls its own expand/collapse chrome.
+- **`cw:CreateSettingsCheckbox / Button / Input`** (`Cogworks-1.0/Forms.lua`) — labeled-row variants of the base primitives, returning `(row, consumedHeight)` for y-cursor stacking. **Prefer these over naked `cw:CreateCheckbox` / `cw:CreateButton` for settings-page rows** — they handle label/control/description layout, font-scale reflow, and the `onHeightChanged` reflow hook for free.
+- **`cw:CreateDropdown(parent, items, selected, onChange, opts)`** — additive 5th arg; pass `{ autoWidth = true, minWidth = 120, maxWidth = 360 }` to fit the widest item label. Re-fits on font-scale change.
+- **`cw:CreateCollapsibleSection`** descriptions, summary text, and chevron arrow all use the suite-wide icon registry (`cw:RegisterIcon` / `cw:ApplyIcon`) — registers `chevron-right` / `chevron-down` against friendslist atlases so `▶ ▼` boxes don't appear.
+- **`cw:CreatePopup(opts)`** + **`cw:ShowConfirmDialog(...)`** — for the existing FlipQueue confirm/cancel patterns.
+- **`cw:RegisterCogMinimapButton(addonName, dataobject, savedvars)`** — shared LDB minimap-button registration with the suite gear-border chrome. Consumer cogs (FlipQueue included) should switch to this in place of any local LibDBIcon wiring; bump the Cogworks `.pkgmeta` tag to `v0.10.0` first.
+
+The phased plan below stays valid as the *theme + base widget* migration. Treat the new primitives above as additional phases the FlipQueue agent can sequence in once the base migration is underway. The estimated scope at the bottom of this doc undercounts — net lines removed will be substantially higher when ScrollTable, Sections, and Forms migrations are factored in.
+
 ## Prerequisites
 
 - FlipQueue already embeds Cogworks-1.0 via `.pkgmeta` (done)
@@ -93,7 +107,6 @@ local color = qc and string.format("%02x%02x%02x", qc[1]*255, qc[2]*255, qc[3]*2
 
 ## What stays in FlipQueue
 
-- `UI/ScrollTable.lua` — too large and domain-specific to extract
 - `UI/BankPopup.lua`, `UI/ExportPopup.lua` — transaction-specific UI
 - `UI/SetupWizard.lua` — onboarding flow unique to FlipQueue
 - `UI/GeneratorPage.lua` — queue generation UI
