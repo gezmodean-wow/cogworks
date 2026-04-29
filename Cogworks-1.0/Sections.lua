@@ -114,7 +114,14 @@ function lib:CreateCollapsibleSection(parent, opts)
     end
   end
 
+  -- Re-entrancy guard. onLayoutChanged callers commonly relayout siblings,
+  -- which can call SetContentHeight again from inside this function. Without
+  -- the guard the callback chain recurses without bound.
+  local applying = false
   local function applyLayout()
+    if applying then return end
+    applying = true
+
     local hH = headerHeightFor(titleFs)
     header:SetHeight(hH)
 
@@ -130,6 +137,8 @@ function lib:CreateCollapsibleSection(parent, opts)
       section:SetHeight(hH + CONTENT_PAD_TOP + contentHeight + CONTENT_PAD_BOT)
     end
     refreshArrow()
+
+    applying = false
     if opts.onLayoutChanged then opts.onLayoutChanged(computeConsumedHeight()) end
   end
 
@@ -146,7 +155,9 @@ function lib:CreateCollapsibleSection(parent, opts)
   end
 
   function section:SetContentHeight(h)
-    contentHeight = math.max(0, tonumber(h) or 0)
+    local newH = math.max(0, tonumber(h) or 0)
+    if newH == contentHeight then return end
+    contentHeight = newH
     applyLayout()
   end
 
