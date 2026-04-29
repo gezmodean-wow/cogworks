@@ -1149,6 +1149,11 @@ pages.layout = function(parent)
   end, 16)
 
   relayout()
+  -- Settle pass — see pages.sections for rationale.
+  f:SetScript("OnUpdate", function(self)
+    self:SetScript("OnUpdate", nil)
+    relayout()
+  end)
   return f
 end
 
@@ -1736,6 +1741,15 @@ pages.sections = function(parent)
   f._fontReflowOwner = fontReflowOwner
 
   relayout()
+  -- Settle pass. WoW resolves FontString wrapped heights asynchronously;
+  -- the first relayout reads single-line heights for body text whose
+  -- anchor chain only just resolved on the prior step. One OnUpdate tick
+  -- later GetStringHeight returns the real wrapped height — re-relayout
+  -- so sibling sections sit below the actual rendered body bounds.
+  f:SetScript("OnUpdate", function(self)
+    self:SetScript("OnUpdate", nil)
+    relayout()
+  end)
   return f
 end
 
