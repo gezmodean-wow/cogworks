@@ -26,6 +26,7 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 - **Public-API registry** (`API.lua`) — `RegisterAPI`, `GetAPI`, `WhenAPIReady`, `GetRegisteredAPIs` — versioned cross-cog API contracts so a producer cog can publish a typed surface (e.g. Tally's `GetItemResearch`) and consumers can negotiate `major.minor` compatibility, with multi-major coexistence for transition windows
 - **Collapsible section** (`Sections.lua`) — `CreateCollapsibleSection` — clickable header + body frame with auto-layout heights, summary text, and a font-scale-aware relayout on `SettingsChanged`
 - **Settings form helpers** (`Forms.lua`) — `CreateSettingsCheckbox`, `CreateSettingsButton`, `CreateSettingsInput` — labeled-row variants of the base primitives that return `(row, consumedHeight)` so settings pages can stack rows with a y-cursor; all rows re-font and re-lay on `SettingsChanged`
+- **Tab panel** (`TabPanel.lua`) — `CreateTabPanel` — inline horizontal tabs with a content area below; pages are lazy-built on first activation, tabs auto-fit their label width and reflow on font-scale changes
 - **Suite-wide icon registry** (`Icons.lua`) — `RegisterIcon`, `ApplyIcon`, `HasIcon` — semantic icon names (`chevron-right`, `chevron-down`, ...) so widgets ask for a known-working visual once instead of rediscovering the "WoW default fonts don't include Geometric Shapes" pitfall every time
 - **Print helpers** — branded per-cog chat prefixes
 

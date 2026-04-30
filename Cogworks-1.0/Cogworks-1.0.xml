@@ -18,5 +18,6 @@
     <Script file="Icons.lua" />
     <Script file="Sections.lua" />
     <Script file="Forms.lua" />
+    <Script file="TabPanel.lua" />
 
 </Ui>

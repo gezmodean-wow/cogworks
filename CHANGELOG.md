@@ -4,11 +4,18 @@ All notable changes to Cogworks-1.0 are tracked here. The library is **additive 
 
 ## [Unreleased]
 
-Bumps MINOR from `12` to `13`. Phase A primitives for the FlipQueue migration (#1).
+Bumps MINOR from `12` to `15`. Phase A + early Phase B primitives for the FlipQueue migration (#1).
 
 ### Added
-- **Settings form helpers** (`Cogworks-1.0/Forms.lua`) — `lib:CreateSettingsCheckbox(parent, opts)`, `lib:CreateSettingsButton(parent, opts)`, `lib:CreateSettingsInput(parent, opts)`. Labeled-row variants of the base primitives. Each returns `(row, consumedHeight)` for y-cursor auto-layout. All rows re-font and re-lay on `SettingsChanged` (`fontScale` / `fontFamily`); callers wanting a stack reflow can subscribe via `opts.onHeightChanged` or re-walk via `row:GetConsumedHeight()`. (#1)
-- **`lib:CreateDropdown` auto-width option** — additive 5th argument `opts` accepting `autoWidth` (bool), `minWidth`, `maxWidth`, `width`. With `autoWidth = true`, the dropdown measures each item's label and fits to the widest, clamped by min/max. Re-fits on `SetItems` and on `SettingsChanged` font changes. Existing callers using the four-positional-arg signature are unaffected. (#1)
+- **Tab panel** (`Cogworks-1.0/TabPanel.lua`) — `lib:CreateTabPanel(parent, opts)`. Inline horizontal tab strip with content area below; tab pages are lazy-built on first activation, tabs auto-size to their label width with a 60 px floor and reflow on `fontScale` / `fontFamily` change. Distinct from `CreateNavButton` (sidebar nav). Phase B item from #1. (MINOR 15)
+- **Section dynamic content height** — `lib:CreateCollapsibleSection`'s `opts.contentHeightFn` and `section:SetContentHeightFn(fn)`. When set, `applyLayout` calls the fn fresh on every pass instead of using a stored value, and the section schedules a one-shot `OnUpdate` settle whenever it shows content — so wrapping body FontStrings size correctly even when their wrapped height isn't measurable until WoW renders the next frame. The existing `SetContentHeight(h)` static API is unchanged. (MINOR 14)
+- **Per-module load guards** — every Cogworks module file (`Sections`, `Forms`, `Icons`, `Items`, `Realms`, `API`, `TabPanel`) tracks a `MODULE_MINOR` on `lib._modules.<Name>`; older copies vendored by sibling cogs that load after a newer standalone copy now skip cleanly instead of clobbering the newer methods. (MINOR 14)
+- **Settings form helpers** (`Cogworks-1.0/Forms.lua`) — `lib:CreateSettingsCheckbox(parent, opts)`, `lib:CreateSettingsButton(parent, opts)`, `lib:CreateSettingsInput(parent, opts)`. Labeled-row variants of the base primitives. Each returns `(row, consumedHeight)` for y-cursor auto-layout. All rows re-font and re-lay on `SettingsChanged` (`fontScale` / `fontFamily`); callers wanting a stack reflow can subscribe via `opts.onHeightChanged` or re-walk via `row:GetConsumedHeight()`. (#1, MINOR 13)
+- **`lib:CreateDropdown` auto-width option** — additive 5th argument `opts` accepting `autoWidth` (bool), `minWidth`, `maxWidth`, `width`. With `autoWidth = true`, the dropdown measures each item's label and fits to the widest, clamped by min/max. Re-fits on `SetItems` and on `SettingsChanged` font changes. Also: dropdown menu now flips up when there isn't room below the dropdown anchor (bottom-of-frame / bottom-of-screen case). Existing four-arg callers are unaffected. (#1, MINOR 13)
+
+### Fixed
+- **Minimap gear ring sized at 32 px** instead of 53. CogBorder.tga's silhouette fills nearly the full 128×128 texture rect; LDBIcon's 53×53 default is sized for a much sparser ring asset and made the gear visually ~70% larger than the button. Tally tuned to 32 in its pre-adoption overlay-swap workaround; the Cogworks helper now matches.
+- **Maxcraft and Tally edge gears mesh** with the cluster's hub and core trio. Earlier `CLUSTER_POSITIONS` floated them well above the meshed core; pulled down to y=17 with the same ~5 px overlap as the FQ↔CW↔TM mesh.
 
 ## [0.10.0] — Embedded-layout minimap fix, icon registry, gear assembly chrome
 

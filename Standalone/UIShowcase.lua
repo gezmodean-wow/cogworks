@@ -168,6 +168,7 @@ local function createShowcase()
     { key = "gears",    label = "Gears",       icon = "Interface\\Icons\\INV_Misc_Gear_01" },
     { key = "settings", label = "Settings",    icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
     { key = "sections", label = "Sections",    icon = "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" },
+    { key = "tabs",     label = "Tabs",        icon = "Interface\\Buttons\\UI-MicroButton-Talents-Up" },
     { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
     { key = "popups",   label = "Popups",      icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
@@ -1518,6 +1519,58 @@ pages.settings = function(parent)
   y = y - 30
 
   c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
+-- Page: Tabs (CreateTabPanel demo)
+-- ============================================================================
+
+pages.tabs = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local activeLabel = f:CreateFontString(nil, "OVERLAY")
+  activeLabel:SetFontObject(cw.Fonts.small)
+  activeLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 8)
+  activeLabel:SetTextColor(unpack(T.textDim))
+
+  local function buildTextPage(text)
+    return function(c)
+      local p = CreateFrame("Frame", nil, c)
+      p:SetAllPoints()
+      local fs = p:CreateFontString(nil, "OVERLAY")
+      fs:SetFontObject(cw.Fonts.normal)
+      fs:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -12)
+      fs:SetPoint("RIGHT", p, "RIGHT", -12, 0)
+      fs:SetJustifyH("LEFT")
+      fs:SetWordWrap(true)
+      fs:SetTextColor(unpack(T.text))
+      fs:SetText(text)
+      return p
+    end
+  end
+
+  local panel = cw:CreateTabPanel(f, {
+    initialTab = "general",
+    onTabChange = function(key)
+      activeLabel:SetText("active tab: " .. key)
+      cw:Print("Cogworks", "tab switched: " .. key)
+    end,
+    tabs = {
+      { key = "general",  label = "General",
+        build = buildTextPage("General-tab content. Tab pages are lazy-built — this Frame was created the first time you navigated to this tab. Switching to another tab Hides this one; coming back Shows it without re-running build.") },
+      { key = "advanced", label = "Advanced",
+        build = buildTextPage("Advanced-tab content. Note the gold accent line under the active tab and the slight bg lift on hover — both pulled from the same theme constants the rest of the suite uses.") },
+      { key = "research", label = "Research / Notes",
+        build = buildTextPage("Tabs auto-size to their label width with a 60 px floor. Switching font scale on the Settings page reflows the strip without clipping. The strip border below the tabs is one continuous line at theme.border; the active accent rides over it on the bottom edge of the active tab.") },
+      { key = "about",    label = "About",
+        build = buildTextPage("CreateTabPanel — Cogworks-1.0 MINOR 15. Each tab is { key, label, build = function(parent) ... return frame end }. Caller owns the page frames; the panel only handles Show/Hide on switch.") },
+    },
+  })
+  panel:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
+  panel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 24)
+
   return f
 end
 
