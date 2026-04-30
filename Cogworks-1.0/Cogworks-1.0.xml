@@ -21,5 +21,6 @@
     <Script file="TabPanel.lua" />
     <Script file="MiniView.lua" />
     <Script file="Text.lua" />
+    <Script file="Wizard.lua" />
 
 </Ui>

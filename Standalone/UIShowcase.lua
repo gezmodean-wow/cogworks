@@ -171,6 +171,7 @@ local function createShowcase()
     { key = "tabs",     label = "Tabs",        icon = "Interface\\Buttons\\UI-MicroButton-Talents-Up" },
     { key = "mini",     label = "MiniView",    icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
     { key = "text",     label = "Text",        icon = "Interface\\Buttons\\UI-MicroButton-Achievement-Up" },
+    { key = "wizard",   label = "Wizard",      icon = "Interface\\Buttons\\UI-MicroButton-Mounts-Up" },
     { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
     { key = "popups",   label = "Popups",      icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
@@ -1521,6 +1522,137 @@ pages.settings = function(parent)
   y = y - 30
 
   c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
+-- Page: Wizard (CreateWizard demo)
+-- ============================================================================
+
+pages.wizard = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local wizardState = { agreed = false, name = "" }
+  local nameRow
+
+  local wizard = cw:CreateWizard(f, {
+    onComplete = function()
+      cw:Print("Cogworks", "wizard finished — name = " .. (wizardState.name or "<empty>"))
+    end,
+    onCancel = function()
+      cw:Print("Cogworks", "wizard cancelled")
+    end,
+    onStepChange = function(key, idx)
+      cw:Print("Cogworks", "wizard step " .. idx .. " (" .. key .. ")")
+    end,
+    steps = {
+      { key = "welcome", title = "Welcome",
+        build = function(c)
+          local p = CreateFrame("Frame", nil, c); p:SetAllPoints()
+          local fs = p:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.normal)
+          fs:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -16)
+          fs:SetPoint("RIGHT", p, "RIGHT", -16, 0)
+          fs:SetJustifyH("LEFT")
+          fs:SetWordWrap(true)
+          fs:SetTextColor(unpack(T.text))
+          fs:SetText("Welcome step. The 'Previous' button is disabled here because we're "
+                  .. "on the first step. Click 'Next' to advance — no validation gate on "
+                  .. "this step, so the Next button is always enabled.")
+          return p
+        end },
+
+      { key = "agree", title = "Agree",
+        build = function(c)
+          local p = CreateFrame("Frame", nil, c); p:SetAllPoints()
+          local fs = p:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.normal)
+          fs:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -16)
+          fs:SetPoint("RIGHT", p, "RIGHT", -16, 0)
+          fs:SetJustifyH("LEFT")
+          fs:SetWordWrap(true)
+          fs:SetTextColor(unpack(T.text))
+          fs:SetText("Validation-gate step. The 'Next' button stays disabled until you "
+                  .. "tick the checkbox below — toggling the checkbox calls "
+                  .. "wizard:Refresh() so the footer state updates immediately.")
+
+          local row = cw:CreateSettingsCheckbox(p, {
+            label    = "I agree to the demo",
+            description = "Required to advance.",
+            value    = wizardState.agreed,
+            onChange = function(v)
+              wizardState.agreed = v
+              wizard:Refresh()
+            end,
+          })
+          row:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -16)
+          row:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", 0, -16)
+
+          return p
+        end,
+        validate = function() return wizardState.agreed end,
+      },
+
+      { key = "name", title = "Name",
+        build = function(c)
+          local p = CreateFrame("Frame", nil, c); p:SetAllPoints()
+          local fs = p:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.normal)
+          fs:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -16)
+          fs:SetPoint("RIGHT", p, "RIGHT", -16, 0)
+          fs:SetJustifyH("LEFT")
+          fs:SetWordWrap(true)
+          fs:SetTextColor(unpack(T.text))
+          fs:SetText("CreateSettingsInput inside a wizard step. Validation requires a "
+                  .. "non-empty name. Press Enter or tab away from the input to commit "
+                  .. "before clicking Next.")
+
+          nameRow = cw:CreateSettingsInput(p, {
+            label       = "Display name",
+            value       = wizardState.name,
+            inputWidth  = 200,
+            onChange    = function(v)
+              wizardState.name = v
+              wizard:Refresh()
+            end,
+          })
+          nameRow:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -16)
+          nameRow:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", 0, -16)
+
+          return p
+        end,
+        validate = function() return wizardState.name and wizardState.name ~= "" end,
+      },
+
+      { key = "review", title = "Review",
+        build = function(c)
+          local p = CreateFrame("Frame", nil, c); p:SetAllPoints()
+          local fs = p:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.normal)
+          fs:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -16)
+          fs:SetPoint("RIGHT", p, "RIGHT", -16, 0)
+          fs:SetJustifyH("LEFT")
+          fs:SetWordWrap(true)
+          fs:SetTextColor(unpack(T.text))
+          -- Re-text on Show so the latest wizardState shows. This is a
+          -- showcase-only quirk — real wizards would persist immediately
+          -- on the previous step's onChange, not lazily at review time.
+          local function refresh()
+            fs:SetText("Final step. The Next button is now labeled 'Finish'.\n\n"
+                    .. "Agreed: " .. tostring(wizardState.agreed) .. "\n"
+                    .. "Name:   " .. (wizardState.name ~= "" and wizardState.name or "<empty>"))
+          end
+          refresh()
+          p:SetScript("OnShow", refresh)
+          return p
+        end,
+      },
+    },
+  })
+  wizard:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
+  wizard:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+
   return f
 end
 
