@@ -2,9 +2,9 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
-## [Unreleased]
+## [0.11.0] — Phase A/B/C UI primitive set
 
-Bumps MINOR from `12` to `15`. Phase A + Phase B primitives for the FlipQueue migration (#1).
+Bumps MINOR from `12` to `15`. The full primitive set called for in cogworks issue #1 — the FlipQueue migration toolkit, plus Tempo / Maxcraft / Tally rebuilds. Per-module load guards landed in this release so older vendored copies in sibling cogs no longer clobber newer methods.
 
 ### Added
 - **Tree** (`Cogworks-1.0/Tree.lua`) — `lib:CreateTree(parent, opts)`. Hierarchical expand/collapse list. Each node is `{ key, label, count?, children? }`. Chevrons render only on branches; click the chevron half of the row to toggle expansion, click anywhere else to select. Supports `Expand(key)`, `Collapse(key)`, `Toggle(key)`, `ExpandAll()`, `CollapseAll()`, `SetSelected(key)`, `GetSelected()`. Phase C item from #1, used by FlipQueue's `ResearchPage`. Non-virtualized for v1 — fine up to a few hundred visible nodes. (MINOR 15)
