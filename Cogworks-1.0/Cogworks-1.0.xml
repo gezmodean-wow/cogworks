@@ -22,5 +22,7 @@
     <Script file="MiniView.lua" />
     <Script file="Text.lua" />
     <Script file="Wizard.lua" />
+    <Script file="Tree.lua" />
+    <Script file="ReorderableList.lua" />
 
 </Ui>

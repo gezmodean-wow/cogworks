@@ -172,6 +172,8 @@ local function createShowcase()
     { key = "mini",     label = "MiniView",    icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
     { key = "text",     label = "Text",        icon = "Interface\\Buttons\\UI-MicroButton-Achievement-Up" },
     { key = "wizard",   label = "Wizard",      icon = "Interface\\Buttons\\UI-MicroButton-Mounts-Up" },
+    { key = "tree",     label = "Tree",        icon = "Interface\\Buttons\\UI-MicroButton-LFG-Up" },
+    { key = "reorder",  label = "Reorderable", icon = "Interface\\Buttons\\UI-MicroButton-Encounter-Journal-Up" },
     { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
     { key = "popups",   label = "Popups",      icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
@@ -1522,6 +1524,122 @@ pages.settings = function(parent)
   y = y - 30
 
   c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
+-- Page: Tree (CreateTree demo)
+-- ============================================================================
+
+pages.tree = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("Click chevrons (or the row near the chevron) to expand / collapse. "
+              .. "Click anywhere else on a row to select. The print line below logs each select event.")
+
+  local sel = f:CreateFontString(nil, "OVERLAY")
+  sel:SetFontObject(cw.Fonts.small)
+  sel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
+  sel:SetTextColor(unpack(T.textDim))
+  sel:SetText("selected: <none>")
+
+  local tree = cw:CreateTree(f, {
+    onSelect = function(key, node)
+      sel:SetText("selected: " .. key .. "  (label: " .. (node.label or "?") .. ")")
+    end,
+  })
+  tree:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -12)
+  tree:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 28)
+
+  tree:SetNodes({
+    { key = "armor", label = "Armor", count = 12, children = {
+      { key = "armor.cloth",   label = "Cloth",   count = 3 },
+      { key = "armor.leather", label = "Leather", count = 4 },
+      { key = "armor.mail",    label = "Mail",    count = 2 },
+      { key = "armor.plate",   label = "Plate",   count = 3 },
+    }},
+    { key = "weapons", label = "Weapons", count = 8, children = {
+      { key = "weapons.1h", label = "One-handed", count = 5, children = {
+        { key = "weapons.1h.swords", label = "Swords", count = 2 },
+        { key = "weapons.1h.maces",  label = "Maces",  count = 2 },
+        { key = "weapons.1h.daggers", label = "Daggers", count = 1 },
+      }},
+      { key = "weapons.2h", label = "Two-handed", count = 3 },
+    }},
+    { key = "consumables", label = "Consumables", count = 24, children = {
+      { key = "cons.flask",  label = "Flasks",  count = 6 },
+      { key = "cons.potion", label = "Potions", count = 12 },
+      { key = "cons.food",   label = "Food",    count = 6 },
+    }},
+    { key = "misc", label = "Miscellaneous (no children)" },
+  })
+  tree:Expand("armor")
+
+  return f
+end
+
+-- ============================================================================
+-- Page: ReorderableList (CreateReorderableList demo)
+-- ============================================================================
+
+pages.reorder = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("Drag rows by the brass handle (or any non-text part of the row) to reorder. "
+              .. "Caller-supplied renderRow populates each row's contents; the list re-orders the items "
+              .. "array on drop and fires onReorder.")
+
+  local order = f:CreateFontString(nil, "OVERLAY")
+  order:SetFontObject(cw.Fonts.small)
+  order:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
+  order:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+  order:SetJustifyH("LEFT")
+  order:SetTextColor(unpack(T.textDim))
+
+  local items = { "Mythic Plus", "Raid Night", "Auction House", "Profession Cooldowns",
+                  "Daily Reset", "Weekly Reset", "Mailbox", "Bank Run" }
+
+  local list = cw:CreateReorderableList(f, {
+    items     = items,
+    rowHeight = 26,
+    renderRow = function(row, item, index)
+      row.label = row.label or row:CreateFontString(nil, "OVERLAY")
+      row.label:SetFontObject(cw.Fonts.normal)
+      row.label:SetPoint("LEFT", row, "LEFT", 24, 0)
+      row.label:SetTextColor(unpack(T.text))
+      row.label:SetText(string.format("%d. %s", index, item))
+    end,
+    onReorder = function(items_, from, to)
+      cw:Print("Cogworks", "reordered: " .. from .. " -> " .. to)
+      local parts = {}
+      for i, v in ipairs(items_) do parts[i] = v end
+      order:SetText("order: " .. table.concat(parts, " | "))
+    end,
+  })
+  list:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -12)
+  list:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 32)
+
+  -- Initial order display
+  local parts = {}
+  for i, v in ipairs(items) do parts[i] = v end
+  order:SetText("order: " .. table.concat(parts, " | "))
+
   return f
 end
 
