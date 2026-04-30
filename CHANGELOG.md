@@ -4,9 +4,11 @@ All notable changes to Cogworks-1.0 are tracked here. The library is **additive 
 
 ## [Unreleased]
 
-Bumps MINOR from `12` to `15`. Phase A + early Phase B primitives for the FlipQueue migration (#1).
+Bumps MINOR from `12` to `15`. Phase A + Phase B primitives for the FlipQueue migration (#1).
 
 ### Added
+- **Mini view frame** (`Cogworks-1.0/MiniView.lua`) — `lib:CreateMiniView(opts)`. Heads-up frame with the suite's standard chrome (title bar, pin, close, resize grip). Position / size / pinned state persist into a caller-supplied savedvars table. Pin locks the frame and hides the resize grip; close fires `opts.onClose`. Honors the suite's `uiScale` setting via `SettingsChanged`. Phase B item from #1. (MINOR 15)
+- **Rich-text helpers** (`Cogworks-1.0/Text.lua`) — `lib:QualityColorName(name, quality)`, `lib:QualityColorHex(quality)`, `lib:ClassColor(class)`, `lib:ClassColorName(name, class)`, `lib:FormatGoldValue(gold)`, `lib:FormatGSC(copper)`, `lib:FormatGoldShort(copper)`. Quality accepts numeric IDs or canonical name strings; class accepts upper-case keys (`"WARRIOR"`, `"DEATHKNIGHT"`, ...). Gold formatting comes in three flavors so cogs can pick the precision they want. Lifted from FlipQueue's `UI/Shared.lua`. Phase B item from #1. (MINOR 15)
 - **Tab panel** (`Cogworks-1.0/TabPanel.lua`) — `lib:CreateTabPanel(parent, opts)`. Inline horizontal tab strip with content area below; tab pages are lazy-built on first activation, tabs auto-size to their label width with a 60 px floor and reflow on `fontScale` / `fontFamily` change. Distinct from `CreateNavButton` (sidebar nav). Phase B item from #1. (MINOR 15)
 - **Section dynamic content height** — `lib:CreateCollapsibleSection`'s `opts.contentHeightFn` and `section:SetContentHeightFn(fn)`. When set, `applyLayout` calls the fn fresh on every pass instead of using a stored value, and the section schedules a one-shot `OnUpdate` settle whenever it shows content — so wrapping body FontStrings size correctly even when their wrapped height isn't measurable until WoW renders the next frame. The existing `SetContentHeight(h)` static API is unchanged. (MINOR 14)
 - **Per-module load guards** — every Cogworks module file (`Sections`, `Forms`, `Icons`, `Items`, `Realms`, `API`, `TabPanel`) tracks a `MODULE_MINOR` on `lib._modules.<Name>`; older copies vendored by sibling cogs that load after a newer standalone copy now skip cleanly instead of clobbering the newer methods. (MINOR 14)

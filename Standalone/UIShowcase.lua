@@ -169,6 +169,8 @@ local function createShowcase()
     { key = "settings", label = "Settings",    icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
     { key = "sections", label = "Sections",    icon = "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" },
     { key = "tabs",     label = "Tabs",        icon = "Interface\\Buttons\\UI-MicroButton-Talents-Up" },
+    { key = "mini",     label = "MiniView",    icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
+    { key = "text",     label = "Text",        icon = "Interface\\Buttons\\UI-MicroButton-Achievement-Up" },
     { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
     { key = "popups",   label = "Popups",      icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
     { key = "buttons",  label = "Buttons",     icon = "Interface\\Buttons\\UI-MicroButton-Abilities-Up" },
@@ -1519,6 +1521,134 @@ pages.settings = function(parent)
   y = y - 30
 
   c:SetHeight(math.abs(y) + 20)
+  return f
+end
+
+-- ============================================================================
+-- Page: MiniView (CreateMiniView demo)
+-- ============================================================================
+
+-- Backed by a transient table local to the showcase — a real cog would
+-- pass its persistent SavedVariables sub-table here.
+local _showcaseMiniSV = {}
+local _showcaseMini
+
+pages.mini = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.normal)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.text))
+  intro:SetText("CreateMiniView opens a draggable, resizable, persistable heads-up frame "
+              .. "with the suite's standard chrome (title bar, pin, close, resize grip). "
+              .. "Position, size, and pinned state are written to the savedvars table the "
+              .. "caller passes in — for the showcase, that's a transient Lua table local "
+              .. "to this page, so geometry is forgotten on /reload.")
+
+  local btn = cw:CreateButton(f, "Open demo MiniView", 200, 28, function()
+    if not _showcaseMini then
+      _showcaseMini = cw:CreateMiniView({
+        name      = "CogworksShowcaseMini",
+        title     = "Demo Mini",
+        width     = 240, height = 140,
+        savedvars = _showcaseMiniSV,
+        onClose   = function() cw:Print("Cogworks", "demo mini hidden") end,
+        onPin     = function(p) cw:Print("Cogworks", "demo mini " .. (p and "pinned" or "unpinned")) end,
+      })
+      local body = _showcaseMini.content:CreateFontString(nil, "OVERLAY")
+      body:SetFontObject(cw.Fonts.normal)
+      body:SetPoint("TOPLEFT", _showcaseMini.content, "TOPLEFT", 4, -4)
+      body:SetPoint("RIGHT", _showcaseMini.content, "RIGHT", -4, 0)
+      body:SetJustifyH("LEFT")
+      body:SetWordWrap(true)
+      body:SetTextColor(unpack(T.text))
+      body:SetText("Drag the title bar to move. Drag the bottom-right corner to resize. "
+                .. "Click the pin to lock; click again to unlock. Close hides the frame.")
+    end
+    if _showcaseMini:IsShown() then _showcaseMini:Hide() else _showcaseMini:Show() end
+  end)
+  btn:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Text helpers (QualityColorName, ClassColorName, FormatGoldValue, FormatGSC)
+-- ============================================================================
+
+pages.text = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local y = 0
+  local function addLine(text)
+    local fs = f:CreateFontString(nil, "OVERLAY")
+    fs:SetFontObject(cw.Fonts.normal)
+    fs:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12 + y)
+    fs:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(true)
+    fs:SetTextColor(unpack(T.text))
+    fs:SetText(text)
+    y = y - 22
+  end
+
+  local function addHeader(text)
+    y = y - 6
+    local h = f:CreateFontString(nil, "OVERLAY")
+    h:SetFontObject(cw.Fonts.header)
+    h:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12 + y)
+    h:SetText(text:upper())
+    h:SetTextColor(unpack(T.textDim))
+    y = y - 22
+  end
+
+  addHeader("QualityColorName")
+  addLine("Numeric: " .. cw:QualityColorName("Common item", 1)
+       .. "  " .. cw:QualityColorName("Uncommon item", 2)
+       .. "  " .. cw:QualityColorName("Rare item", 3))
+  addLine("More: " .. cw:QualityColorName("Epic item", 4)
+       .. "  " .. cw:QualityColorName("Legendary item", 5)
+       .. "  " .. cw:QualityColorName("Heirloom item", 7))
+  addLine("Named: " .. cw:QualityColorName("Rare", "Rare")
+       .. " / " .. cw:QualityColorName("Legendary", "Legendary"))
+
+  addHeader("ClassColorName")
+  addLine(cw:ClassColorName("Warrior", "WARRIOR")
+       .. "  " .. cw:ClassColorName("Paladin", "PALADIN")
+       .. "  " .. cw:ClassColorName("Hunter", "HUNTER")
+       .. "  " .. cw:ClassColorName("Rogue", "ROGUE")
+       .. "  " .. cw:ClassColorName("Priest", "PRIEST"))
+  addLine(cw:ClassColorName("Death Knight", "DEATHKNIGHT")
+       .. "  " .. cw:ClassColorName("Shaman", "SHAMAN")
+       .. "  " .. cw:ClassColorName("Mage", "MAGE")
+       .. "  " .. cw:ClassColorName("Warlock", "WARLOCK"))
+  addLine(cw:ClassColorName("Monk", "MONK")
+       .. "  " .. cw:ClassColorName("Druid", "DRUID")
+       .. "  " .. cw:ClassColorName("Demon Hunter", "DEMONHUNTER")
+       .. "  " .. cw:ClassColorName("Evoker", "EVOKER"))
+
+  addHeader("FormatGoldValue")
+  addLine("Below 1k:  150 gold = " .. cw:FormatGoldValue(150))
+  addLine("Above 1k:  4250 gold = " .. cw:FormatGoldValue(4250))
+  addLine("Above 100k: 250000 gold = " .. cw:FormatGoldValue(250000))
+
+  addHeader("FormatGSC (copper input)")
+  addLine("12g 34s 56c = " .. cw:FormatGSC(123456))
+  addLine("0g 5s 0c    = " .. cw:FormatGSC(500))
+  addLine("just copper = " .. cw:FormatGSC(75))
+  addLine("zero        = " .. cw:FormatGSC(0))
+
+  addHeader("FormatGoldShort (copper input)")
+  addLine("13g       = " .. cw:FormatGoldShort(133456))
+  addLine("12.3k     = " .. cw:FormatGoldShort(123456789))
+  addLine("1.2m      = " .. cw:FormatGoldShort(12345678901))
+
   return f
 end
 

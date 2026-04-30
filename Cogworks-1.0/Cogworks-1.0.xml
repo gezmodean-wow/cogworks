@@ -19,5 +19,7 @@
     <Script file="Sections.lua" />
     <Script file="Forms.lua" />
     <Script file="TabPanel.lua" />
+    <Script file="MiniView.lua" />
+    <Script file="Text.lua" />
 
 </Ui>

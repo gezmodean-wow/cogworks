@@ -27,6 +27,8 @@ Existing FlipQueue and Tempo users do not need to install anything new — their
 - **Collapsible section** (`Sections.lua`) — `CreateCollapsibleSection` — clickable header + body frame with auto-layout heights, summary text, and a font-scale-aware relayout on `SettingsChanged`
 - **Settings form helpers** (`Forms.lua`) — `CreateSettingsCheckbox`, `CreateSettingsButton`, `CreateSettingsInput` — labeled-row variants of the base primitives that return `(row, consumedHeight)` so settings pages can stack rows with a y-cursor; all rows re-font and re-lay on `SettingsChanged`
 - **Tab panel** (`TabPanel.lua`) — `CreateTabPanel` — inline horizontal tabs with a content area below; pages are lazy-built on first activation, tabs auto-fit their label width and reflow on font-scale changes
+- **Mini view frame** (`MiniView.lua`) — `CreateMiniView` — heads-up frame for per-cog mini displays with the suite's standard chrome (title bar, pin, close, resize grip); position / size / pinned state persist into a caller-supplied savedvars table; honors the suite's `uiScale` setting
+- **Rich-text helpers** (`Text.lua`) — `QualityColorName`, `QualityColorHex`, `ClassColor`, `ClassColorName`, `FormatGoldValue`, `FormatGSC`, `FormatGoldShort` — item-quality colored names, class colored character names, and gold formatting in three flavors (rounded-to-thousand, full G/S/C, abbreviated)
 - **Suite-wide icon registry** (`Icons.lua`) — `RegisterIcon`, `ApplyIcon`, `HasIcon` — semantic icon names (`chevron-right`, `chevron-down`, ...) so widgets ask for a known-working visual once instead of rediscovering the "WoW default fonts don't include Geometric Shapes" pitfall every time
 - **Print helpers** — branded per-cog chat prefixes
 
