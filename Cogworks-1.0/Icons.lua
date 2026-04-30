@@ -18,6 +18,12 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
+-- Module load guard. See Sections.lua for the rationale.
+local MODULE_MINOR = 14
+lib._modules = lib._modules or {}
+if (lib._modules.Icons or 0) >= MODULE_MINOR then return end
+lib._modules.Icons = MODULE_MINOR
+
 lib.icons = lib.icons or {}
 
 -- Built-in registry. Re-running this file on a MINOR bump replaces the

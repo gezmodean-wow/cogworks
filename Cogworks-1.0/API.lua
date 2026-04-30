@@ -29,6 +29,12 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
+-- Module load guard. See Sections.lua for the rationale.
+local MODULE_MINOR = 14
+lib._modules = lib._modules or {}
+if (lib._modules.API or 0) >= MODULE_MINOR then return end
+lib._modules.API = MODULE_MINOR
+
 -- Ensure the APIRegistered event name exists even if lib.Events was
 -- initialized by an older MINOR that didn't list it.
 lib.Events = lib.Events or {}

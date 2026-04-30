@@ -13,6 +13,17 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
+-- Module load guard. Cogworks lib files run unconditionally per addon: when
+-- a sibling cog vendors an older Cogworks copy, its module files load AFTER
+-- the standalone library and would otherwise clobber methods the newer copy
+-- already attached. Tracking a per-module loaded-at-MINOR on lib lets older
+-- copies skip cleanly. Bump MODULE_MINOR alongside the lib MINOR whenever
+-- this file's behavior changes; otherwise it can stay as-is across releases.
+local MODULE_MINOR = 14
+lib._modules = lib._modules or {}
+if (lib._modules.Sections or 0) >= MODULE_MINOR then return end
+lib._modules.Sections = MODULE_MINOR
+
 local HEADER_PAD_VERT = 6   -- extra height above + below header text
 local HEADER_PAD_LEFT = 4
 local CONTENT_INSET   = 8   -- left/right inset for content frame

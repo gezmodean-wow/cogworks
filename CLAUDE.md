@@ -88,7 +88,14 @@ The reverse direction also applies: if you spot a gap in a sibling cog while wor
 ## When adding new library features
 
 1. **Bump `MINOR`** in `Cogworks-1.0.lua` before adding the feature.
-2. **Guard stateful tables** with `lib.foo = lib.foo or {}` so older copies don't clobber newer state when LibStub re-runs the file.
-3. **Never remove** a function or event name. If an API is wrong, add a new one alongside and leave the old one as a deprecated thin wrapper.
-4. **Document the new feature** in README.md's "What's inside" and add an example to the usage snippet if it's consumer-facing.
-5. **Update `lib.version`** only for suite-level releases; `MINOR` is the internal API version that matters to cogs.
+2. **Bump the touched module's `MODULE_MINOR`** to match, in any module file (`Sections.lua`, `Forms.lua`, `Icons.lua`, `Items.lua`, `Realms.lua`, `API.lua`, ...) whose behavior you change. The per-module guard at the top skips the file when an equal-or-higher copy has already loaded; without bumping, your new code won't supersede an older sibling-cog's vendored copy.
+3. **Guard stateful tables** with `lib.foo = lib.foo or {}` so older copies don't clobber newer state when LibStub re-runs the file.
+4. **Never remove** a function or event name. If an API is wrong, add a new one alongside and leave the old one as a deprecated thin wrapper.
+5. **Document the new feature** in README.md's "What's inside" and add an example to the usage snippet if it's consumer-facing.
+6. **Update `lib.version`** only for suite-level releases; `MINOR` is the internal API version that matters to cogs.
+
+### Why per-module guards exist
+
+`Cogworks-1.0.lua` does its own LibStub `NewLibrary` short-circuit, so if an older copy of the main file is loaded first the newer one upgrades methods on the same `lib` table. Module files don't get that for free — they're just `lib = LibStub("Cogworks-1.0")` followed by method assignments. Without a guard, an older cog's vendored `Sections.lua` (loaded after the standalone Cogworks's newer one) would silently overwrite the newer methods. The guard tracks `lib._modules.<Name>` — first writer at any given `MODULE_MINOR` wins; older copies skip.
+
+When to bump `MODULE_MINOR`: any time you change behavior, signatures, or invariants in a module file. Same lib `MINOR` is fine — the module guard is independent. Don't bump for pure comment changes.
