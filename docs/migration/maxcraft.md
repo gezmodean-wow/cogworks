@@ -2,11 +2,13 @@
 
 Maxcraft has the cleanest starting point — its `UI/Shared.lua` was explicitly adapted from Tempo's and is almost identical to the Cogworks UI module. Migration is nearly mechanical.
 
+The Cogworks library now covers Phase A, B, and C of the buildout (cogworks issue #1) — beyond the original theme/widget migration plan, Maxcraft can also rebuild its CoachWidget heads-up onto `CreateMiniView`, its step editor settings onto `CreateTabPanel` + Forms helpers, and any hierarchical builds onto `CreateTree`. See `flipqueue.md` for the full primitive surface.
+
 ## Prerequisites
 
-- Maxcraft's `.pkgmeta` already has the Cogworks-1.0 external (done)
-- Maxcraft's `.toc` already loads `Libs\Cogworks-1.0\Cogworks-1.0.lua` (done)
-- Bump the Cogworks tag in `.pkgmeta` to the version that includes the UI module
+- Maxcraft's `.pkgmeta` already has the Cogworks-1.0 external (done).
+- Maxcraft's `.toc` should load `Libs\Cogworks-1.0\Cogworks-1.0.xml` (the XML manifest pulls in all module files; the old single-`.lua` line predates Forms / TabPanel / MiniView / Wizard / Tree / ReorderableList / Text and won't pick those up).
+- Bump the Cogworks tag in `.pkgmeta` once the next tagged Cogworks release ships (likely `v0.11.0`) so the packaged build picks up the full Phase B + C set.
 
 ## Phase 1: Theme + backdrop migration
 
@@ -90,16 +92,34 @@ end)
 cw:SetNavButtonActive(btn, true)
 ```
 
+## Phase 4: CoachWidget → MiniView
+
+`UI/CoachWidget.lua` is a floating heads-up step checklist — exactly the shape `cw:CreateMiniView` is for. Drag/resize/persistence chrome moves to the lib; Maxcraft-specific content (current step, progress, ingredient list) lives inside `mini.content`. Persist position/size/pinned via `MaxcraftCharDB.coachWidget`.
+
+`UI/CraftCoach.lua` and `UI/GatherCoach.lua` keep their domain logic but render through the same shared MiniView shell.
+
+## Phase 5: Settings + step editor
+
+`UI/SettingsPage.lua` migrates onto `cw:CreateTabPanel` for any general / advanced splits, `cw:CreateCollapsibleSection` for grouped settings, and `cw:CreateSettingsCheckbox / Button / Input` for the actual rows.
+
+`UI/StepEditorPage.lua` migrates onto Forms helpers (label + input rows) for step parameters. If profession steps form a hierarchy (e.g. recipe → reagent → optional reagents), `cw:CreateTree` covers that shape.
+
+## Phase 6: Builds page
+
+If `UI/BuildsPage.lua` lists builds with sub-steps, `cw:CreateTree` is the natural fit. If it's flat, `cw:CreateScrollTable` covers it.
+
+## Phase 7: Rich-text helpers
+
+Maxcraft uses class-colored character names + quality-colored item names + gold formatting in several places. Replace inline string-formatting with `cw:QualityColorName(name, quality)`, `cw:ClassColorName(name, class)`, `cw:FormatGoldValue(gold)`.
+
 ## What stays in Maxcraft
 
-- `UI.STATUS_COLORS` — domain-specific (satisfied/partial/missing/inactive)
-- `UI:StatusColor()`, `UI:StatusHex()` — use Maxcraft's own status enum
-- `UI/CoachWidget.lua` — floating step checklist, unique to professions
-- `UI/CraftCoach.lua`, `UI/GatherCoach.lua` — domain-specific pages
-- `UI/StepEditorPage.lua` — profession step editing
-- `UI/Toast.lua` — simple toast, could migrate later but low priority
-- All slash commands (`/maxcraft`, `/mxc`)
-- `MaxcraftDB` / `MaxcraftCharDB` saved variables
+- `UI.STATUS_COLORS` — domain-specific (satisfied/partial/missing/inactive).
+- `UI:StatusColor()`, `UI:StatusHex()` — use Maxcraft's own status enum.
+- All page *content* (the actual coach data, recipe info, ingredient lists). The shared *chrome* migrates; the domain logic stays.
+- `UI/Toast.lua` — could migrate later if Cogworks grows a generic toast primitive (none today).
+- All slash commands (`/maxcraft`, `/mxc`).
+- `MaxcraftDB` / `MaxcraftCharDB` saved variables.
 
 ## After migration: what's left in `UI/Shared.lua`
 
@@ -116,10 +136,15 @@ function UI:StatusHex(status) ... end
 
 About 15 lines, down from 169.
 
-## Estimated scope
+## Estimated scope (revised)
 
-- ~15 theme reference replacements across 9 files (Phase 1)
-- ~8 factory call replacements (Phase 2)
-- ~2 nav button replacements (Phase 3)
-- ~120 lines deleted from `UI/Shared.lua`
-- Net lines removed: ~130-150
+| Phase                                  | Lines removed (approx) |
+|----------------------------------------|------------------------|
+| Theme + backdrop migration (Phase 1)   | ~15                    |
+| Widget factory migration (Phase 2)     | ~80                    |
+| Nav button migration (Phase 3)         | ~50                    |
+| CoachWidget → MiniView (Phase 4)       | ~150                   |
+| Settings + step editor (Phase 5)       | ~120                   |
+| Builds page (Phase 6)                  | ~80                    |
+| Rich-text helpers (Phase 7)            | ~30                    |
+| **Total**                              | **~500 – 600**         |

@@ -2,11 +2,13 @@
 
 Tempo already has a clean `UI/Shared.lua` with a shared `UI.THEME` table and widget factories. Migration is straightforward: replace the local definitions with calls to Cogworks-1.0, then delete the duplicated code.
 
+The Cogworks library now covers Phase A, B, and C of the buildout (cogworks issue #1) — beyond the original theme/widget migration plan, Tempo can also rebuild its mini view, setup wizard, tabbed settings, and task hierarchies on shared primitives. See `flipqueue.md` for the full primitive surface (`CreateTabPanel`, `CreateMiniView`, `CreateWizard`, `CreateTree`, `CreateReorderableList`, settings form helpers, rich-text helpers).
+
 ## Prerequisites
 
-- Tempo's `.pkgmeta` already has the Cogworks-1.0 external (done)
-- Tempo's `.toc` already loads `Libs\Cogworks-1.0\Cogworks-1.0.lua` (done)
-- Bump the Cogworks tag in `.pkgmeta` to the version that includes the UI module
+- Tempo's `.pkgmeta` already has the Cogworks-1.0 external (done).
+- Tempo's `.toc` should load `Libs\Cogworks-1.0\Cogworks-1.0.xml` (the XML manifest pulls in all module files; the old single-`.lua` line predates Forms / TabPanel / MiniView / Wizard / Tree / ReorderableList / Text and won't pick those up).
+- Bump the Cogworks tag in `.pkgmeta` once the next tagged Cogworks release ships (likely `v0.11.0`) so the packaged build picks up the full Phase B + C set.
 
 ## Phase 1: Theme table migration
 
@@ -101,23 +103,59 @@ end)
 cw:SetNavButtonActive(btn, true)
 ```
 
+## Phase 4: ScrollTable migration
+
+`cw:CreateScrollTable(parent, columns)` now covers what Tempo's `UI/ScrollTable.lua` does, with extra goodies (per-row `_rowColor`, `_icon`, `_tooltipText`, `_tooltipExtra`). Migrate every consumer:
+
+- `UI/DashboardPage.lua` — task summary table.
+- `UI/TaskListPage.lua` — task list table.
+- `UI/AllCharactersPage.lua` — per-character roll-up table.
+
+Once these migrate, `UI/ScrollTable.lua` deletes.
+
+## Phase 5: MiniView migration
+
+`UI/MiniView.lua` rebuilds onto `cw:CreateMiniView`. The local drag/resize/persistence logic deletes; Tempo-specific content (next reset countdown, character status pills, etc.) lives inside `mini.content`. Position/size/pinned state persists via Tempo's `TempoCharDB.miniView` table.
+
+The reset-timer heads-up that has been on the roadmap for Tempo specifically lands here — same primitive, different content.
+
+## Phase 6: Wizard migration
+
+`UI/SetupWizard.lua` rebuilds onto `cw:CreateWizard`. Each onboarding step becomes a `{ key, title, build, validate }` entry. The wizard owns Cancel / Previous / Next / Finish; Tempo's onboarding logic lives in the per-step `build` functions.
+
+## Phase 7: Settings page rewrite
+
+`UI/SettingsPage.lua` migrates onto:
+- `cw:CreateTabPanel` for general / per-character / advanced splits.
+- `cw:CreateCollapsibleSection` for grouped settings within a tab.
+- `cw:CreateSettingsCheckbox / Button / Input` for the actual rows (replace any naked `cw:CreateCheckbox` calls in settings rows with the labeled-row variants — they handle the layout automatically).
+
+## Phase 8: Cross-realm helpers
+
+Tempo's reset-timing logic depends on knowing realm-local cutoffs. `cw:NormalizeRealmKey`, `cw:RealmMatches`, `cw:RealmsOverlap` (`Cogworks-1.0/Realms.lua`) handle the normalization piece today. Server-time / connected-realm group helpers are still pending in cogworks issue #2 — Tempo can adopt them when they land without rewiring the rest of the migration.
+
 ## What stays in Tempo
 
-- `UI.STATUS_COLORS` — domain-specific (incomplete/in_progress/complete/skipped)
-- `UI.PERIOD_COLORS` — domain-specific (daily/weekly/etc.)
-- `UI:FormatStatus()` — uses Tempo's own status enum
-- `UI:FormatPeriodHeader()` — uses Tempo's Time module
-- `UI/ScrollTable.lua` — too large for generic extraction
-- `UI/Toast.lua` — Tempo's pooled toast system is more complex than the generic case
-- `UI/SetupWizard.lua` — onboarding unique to Tempo
-- All page-specific UI (Dashboard, TaskList, AllCharacters, etc.)
-- All slash commands (`/tempo`, `/tmp`)
-- `TempoDB` / `TempoCharDB` saved variables
+- `UI.STATUS_COLORS` — domain-specific (incomplete/in_progress/complete/skipped).
+- `UI.PERIOD_COLORS` — domain-specific (daily/weekly/etc.).
+- `UI:FormatStatus()` — uses Tempo's own status enum.
+- `UI:FormatPeriodHeader()` — uses Tempo's Time module.
+- `UI/Toast.lua` — Tempo's pooled toast system is more complex than the generic case (no Cogworks equivalent yet; revisit if Maxcraft / FlipQueue grow similar pools).
+- All page-specific *content* (the table data, the period grouping, the task-edit form fields). The shared *chrome* migrates; the domain logic stays.
+- All slash commands (`/tempo`, `/tmp`).
+- `TempoDB` / `TempoCharDB` saved variables.
 
-## Estimated scope
+## Estimated scope (revised)
 
-- ~20 theme reference replacements across 11 files (Phase 1)
-- ~10 factory call replacements (Phase 2)
-- ~2 nav button replacements (Phase 3)
-- ~160 lines deleted from `UI/Shared.lua`
-- Net lines removed: ~160-180
+| Phase                                  | Lines removed (approx) |
+|----------------------------------------|------------------------|
+| Theme + backdrop migration (Phase 1)   | ~20                    |
+| Widget factory migration (Phase 2)     | ~80                    |
+| Nav button migration (Phase 3)         | ~70                    |
+| ScrollTable migration (Phase 4)        | ~400 (deletes `UI/ScrollTable.lua`) |
+| MiniView migration (Phase 5)           | ~150                   |
+| Wizard migration (Phase 6)             | ~100                   |
+| Settings page rewrite (Phase 7)        | ~120                   |
+| **Total**                              | **~900 – 1,000**       |
+
+Net delta is smaller after the Cogworks calls go in, but Tempo's `UI/Shared.lua` shrinks to ~15-20 lines (status / period colors only) and several whole files delete.
