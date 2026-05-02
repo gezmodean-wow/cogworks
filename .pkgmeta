@@ -2,6 +2,15 @@ package-as: cogworks
 
 enable-nolib-creation: no
 
+# Cogworks is a shared library; its CF/Wago audience is sibling-cog authors,
+# so the engineering-focused CHANGELOG.md doubles as the project-page
+# changelog (no separate player-facing file needed). manual-changelog is
+# read at package time independent of the `ignore: "*.md"` list below — the
+# file is uploaded as changelog metadata, not packaged into the zip.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 externals:
   Libs/LibStub:
     url: https://repos.wowace.com/wow/libstub/trunk
