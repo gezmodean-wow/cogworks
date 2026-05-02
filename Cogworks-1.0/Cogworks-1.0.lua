@@ -25,7 +25,7 @@ assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires C
 -- because every consumer ships the same external, the path resolves either way.
 local LIB_LOADER_ADDON = ...
 
-local MAJOR, MINOR = "Cogworks-1.0", 16
+local MAJOR, MINOR = "Cogworks-1.0", 17
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -35,7 +35,7 @@ lib.loaderAddon = lib.loaderAddon or LIB_LOADER_ADDON
 -- Version
 -- ============================================================================
 
-lib.version      = "0.12.0"  -- human-facing semver of the Cogworks suite
+lib.version      = "0.13.0"  -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -77,6 +77,11 @@ lib.Events = lib.Events or {
 
   -- Public-API registry (see API.lua)
   APIRegistered    = "APIRegistered",    -- (name, major, minor)
+
+  -- Lib-side debug bridge (see Debug.lua). Lib internals fire LibDebug; every
+  -- per-cog debug logger auto-subscribes and tags the entry "[Cogworks-1.0]"
+  -- in the cog's own ring buffer.
+  LibDebug         = "LibDebug",         -- (msg, scope?)  scope is a free-form tag like "Profile"
 }
 
 if not lib.callbacks then
@@ -533,6 +538,31 @@ local function gearBorderPath(addonName)
   return libArtPath(addonName, "CogBorder")
 end
 
+-- Registry of registered cog minimap buttons. Used by the easter-egg mesh-spin
+-- so that hovering one cog's button can pulse-spin every other suite cog's
+-- button without each cog wiring it up.
+lib._cogMinimapButtons = lib._cogMinimapButtons or {}  -- [cogName] = { button, gear, spinGroup }
+
+local MESH_SPIN_DURATION = 1.2
+
+local function buildSpinGroup(gear)
+  local g = gear:CreateAnimationGroup()
+  local rot = g:CreateAnimation("Rotation")
+  rot:SetDegrees(360)
+  rot:SetDuration(MESH_SPIN_DURATION)
+  return g
+end
+
+-- Fire a one-shot spin on every registered cog button EXCEPT the one being
+-- hovered (it stays still as the "anchor" gear that the others mesh against).
+local function pulseOtherCogs(skipCog)
+  for cog, entry in pairs(lib._cogMinimapButtons) do
+    if cog ~= skipCog and entry.spinGroup and not entry.spinGroup:IsPlaying() then
+      entry.spinGroup:Play()
+    end
+  end
+end
+
 function lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)
   local LDBIcon = LibStub("LibDBIcon-1.0", true)
   if not LDBIcon then
@@ -559,6 +589,16 @@ function lib:RegisterCogMinimapButton(addonName, dataobject, savedvars)
   gear:SetTexture(gearBorderPath(addonName))
   gear:SetSize(COG_BORDER_SIZE, COG_BORDER_SIZE)
   gear:SetPoint("CENTER", button, "CENTER", 0, 0)
+
+  -- Mesh-spin easter egg: hovering or clicking any cog suite minimap button
+  -- pulse-spins every OTHER registered cog button. One-shot animation per
+  -- cog so it stays cheap; skipped when an animation is already playing
+  -- (no chained spins from a hover-jiggle).
+  local spinGroup = buildSpinGroup(gear)
+  lib._cogMinimapButtons[addonName] = { button = button, gear = gear, spinGroup = spinGroup }
+
+  button:HookScript("OnEnter", function() pulseOtherCogs(addonName) end)
+  button:HookScript("OnClick", function() pulseOtherCogs(addonName) end)
 
   return true
 end

@@ -18,6 +18,14 @@ externals:
   Libs/CallbackHandler-1.0:
     url: https://repos.wowace.com/wow/callbackhandler/trunk/CallbackHandler-1.0
     tag: latest
+  # LDB + LDBIcon power the standalone minimap button. Standalone-only —
+  # sibling cogs already vendor their own copies via their own .pkgmeta.
+  Libs/LibDataBroker-1.1:
+    url: https://repos.wowace.com/wow/libdatabroker-1-1/trunk
+    tag: latest
+  Libs/LibDBIcon-1.0:
+    url: https://repos.curseforge.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
+    tag: latest
 
 ignore:
   - "*.md"

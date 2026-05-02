@@ -181,6 +181,11 @@ local function createShowcase()
     { key = "nav",      label = "Navigation",  icon = "Interface\\Buttons\\UI-MicroButton-Socials-Up" },
     { key = "theme",    label = "Theme",       icon = "Interface\\Buttons\\UI-MicroButton-Collections-Up" },
     { key = "layout",   label = "Layout",      icon = "Interface\\Icons\\Trade_Engineering" },
+    { key = "debug",    label = "Debug",       icon = "Interface\\Buttons\\UI-OptionsButton" },
+    { key = "mainframe",label = "MainFrame",   icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
+    { key = "drawer",   label = "Drawer",      icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
+    { key = "toast",    label = "Toast",       icon = "Interface\\COMMON\\Indicator-Yellow" },
+    { key = "slash",    label = "Slash",       icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
   }
 
   local navHeader = cw:CreateSectionHeader(sidebar, "Pages", -12)
@@ -2293,6 +2298,262 @@ pages.sections = function(parent)
   f._fontReflowOwner = fontReflowOwner
 
   relayout()
+  return f
+end
+
+-- ============================================================================
+-- Page: Debug toolkit (CreateDebugConsole + logger + inspector + profiler)
+-- ============================================================================
+
+pages.debug = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  -- Lazy-create a logger + register a few inspectors/actions on first visit
+  -- so the showcase has interesting demo content the moment the user clicks.
+  local DEMO_COG = "Cogworks"
+  if not f._wired then
+    f._wired = true
+    cw:RegisterDebugLogger(DEMO_COG, { ringMax = 200 })
+    cw:RegisterDebugInspector(DEMO_COG, "Suite roster", function() return cw.SuiteRoster end)
+    cw:RegisterDebugInspector(DEMO_COG, "Settings",     function() return cw.settings    end)
+    cw:RegisterDebugInspector(DEMO_COG, "Registered addons", function() return cw:GetRegisteredAddons() end)
+    cw:RegisterDebugAction(DEMO_COG, "Emit test debug log", function()
+      for i = 1, 5 do cw:DebugPrint(DEMO_COG, "test line " .. i) end
+    end)
+    cw:RegisterDebugAction(DEMO_COG, "Profile a sleep loop", function()
+      cw:SetDebugEnabled(DEMO_COG, true)
+      for _ = 1, 50 do
+        cw:Profile(DEMO_COG, "Math.sqrt-loop", function()
+          local s = 0
+          for i = 1, 5000 do s = s + math.sqrt(i) end
+          return s
+        end)
+      end
+      cw:DebugPrint(DEMO_COG, "Profile sample done — see Profile tab")
+    end)
+    cw:RegisterDebugAction(DEMO_COG, "Fire a LibDebug bridge event", function()
+      cw:_LibDebugPrint("hello from the lib bridge", "Showcase")
+    end)
+  end
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT",  f, "TOPLEFT",  12, -12)
+  intro:SetPoint("RIGHT",    f, "RIGHT",    -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("Per-cog debug toolkit. Click below to open a CreateDebugConsole instance pointed at the standalone Cogworks logger. "
+              .. "Pre-registered actions, inspectors, and a sample profile loop are ready to poke at; the LibDebug bridge demo shows "
+              .. "lib-side events landing in the cog's own ring buffer.")
+
+  local openBtn = cw:CreateButton(f, "Open debug console", 200, 28, function()
+    if not f._console then
+      f._console = cw:CreateDebugConsole({ cog = DEMO_COG })
+    end
+    if f._console:IsShown() then f._console:Hide() else f._console:Show() end
+  end)
+  openBtn:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  local emitBtn = cw:CreateButton(f, "Emit 1 debug line", 160, 24, function()
+    cw:DebugPrint(DEMO_COG, "Showcase emit @ " .. date("%H:%M:%S"))
+  end)
+  emitBtn:SetPoint("TOPLEFT", openBtn, "BOTTOMLEFT", 0, -8)
+
+  local dumpBtn = cw:CreateButton(f, "Open state dump dialog", 200, 24, function()
+    cw:CreateCopyDialog(cw:DumpDebugState(DEMO_COG),
+      "Full state dump for " .. DEMO_COG .. "  —  Ctrl+A then Ctrl+C"):Show()
+  end)
+  dumpBtn:SetPoint("TOPLEFT", emitBtn, "BOTTOMLEFT", 0, -8)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: ThemedMainFrame demo
+-- ============================================================================
+
+pages.mainframe = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT",  f, "TOPLEFT",  12, -12)
+  intro:SetPoint("RIGHT",    f, "RIGHT",    -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("CreateThemedMainFrame is the one-call main-window chrome. Title bar, optional summary row, sidebar with drag-to-resize handle, "
+              .. "content area, resize grip, ESC-to-close, persisted geometry. The button below opens a sample frame with three pre-registered nav items.")
+
+  cw:CreateButton(f, "Open ThemedMainFrame demo", 240, 28, function()
+    if not f._demo then
+      local demo = cw:CreateThemedMainFrame({
+        title         = "ThemedMainFrame demo",
+        versionText   = "v" .. cw.version,
+        defaultSize   = { w = 620, h = 420 },
+        minSize       = { w = 480, h = 320 },
+        sidebar       = { defaultWidth = 130 },
+        closeOnEscape = true,
+      })
+      demo:SetSummary("Sample summary text — frame:SetSummary(text)")
+      local function makePage(label, color)
+        return function(p)
+          local pf = CreateFrame("Frame", nil, p)
+          pf:SetAllPoints()
+          local fs = pf:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.large)
+          fs:SetPoint("CENTER")
+          fs:SetText(label)
+          fs:SetTextColor(unpack(color))
+          return pf
+        end
+      end
+      demo:SetPageBuilder("alpha", makePage("Page Alpha",   T.gold))
+      demo:SetPageBuilder("beta",  makePage("Page Beta",    T.arcane))
+      demo:SetPageBuilder("gamma", makePage("Page Gamma",   T.success))
+      demo:AddNavItem({ key = "alpha", label = "Alpha", icon = "Interface\\Icons\\Spell_Holy_FistOfJustice" })
+      demo:AddNavItem({ key = "beta",  label = "Beta",  icon = "Interface\\Icons\\Spell_Frost_FrostBolt02"  })
+      demo:AddNavItem({ key = "gamma", label = "Gamma", icon = "Interface\\Icons\\Spell_Nature_LightningBolt" })
+      demo:SetActivePage("alpha")
+      f._demo = demo
+    end
+    if f._demo:IsShown() then f._demo:Hide() else f._demo:Show() end
+  end):SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Drawer demo
+-- ============================================================================
+
+pages.drawer = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT",   f, "RIGHT",   -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("Non-modal floating panel that anchors next to a parent (the showcase, in this demo). Drag the title to move; ESC closes; geometry persists.")
+
+  cw:CreateButton(f, "Toggle drawer", 200, 28, function()
+    if not f._drawer then
+      f._drawer = cw:CreateDrawer({
+        title       = "Sample drawer",
+        width       = 260,
+        height      = 320,
+        resizable   = true,
+        anchorTo    = showcase,
+        anchorPoint = "TOPLEFT",
+        anchorRelativePoint = "TOPRIGHT",
+        anchorOffset = { x = 6, y = 0 },
+      })
+      local body = f._drawer.content:CreateFontString(nil, "OVERLAY")
+      body:SetFontObject(cw.Fonts.small)
+      body:SetPoint("TOPLEFT", 8, -8)
+      body:SetPoint("RIGHT", -8, 0)
+      body:SetJustifyH("LEFT")
+      body:SetWordWrap(true)
+      body:SetTextColor(unpack(T.text))
+      body:SetText("This is drawer.content. Caller anchors widgets here. The drawer auto-anchors to the showcase frame on Show, and persists position once you drag it.")
+    end
+    f._drawer:Toggle()
+  end):SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Toast demo
+-- ============================================================================
+
+pages.toast = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT",   f, "RIGHT",   -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("Click each severity to fire a toast. Multiple firings stack vertically from the top-right of the screen. "
+              .. "Hover a toast to pause its auto-dismiss; click anywhere on it to dismiss immediately.")
+
+  local sevs = {
+    { label = "Toast: success", severity = "success", text = "Posted 12 items for ~84g",
+      icon  = "Interface\\Icons\\INV_Misc_Coin_01" },
+    { label = "Toast: info",    severity = "info",    text = "Snapshot saved at 14:02" },
+    { label = "Toast: warning", severity = "warning", text = "4 deals expire in <30 minutes",
+      icon  = "Interface\\Icons\\INV_Misc_Bell_01" },
+    { label = "Toast: error",   severity = "error",   text = "Auction post failed: not enough money",
+      icon  = "Interface\\Icons\\Ability_DualWield" },
+  }
+
+  local prev = intro
+  for i, def in ipairs(sevs) do
+    local b = cw:CreateButton(f, def.label, 180, 24, function()
+      cw:Toast({ text = def.text, severity = def.severity, icon = def.icon, duration = 4 })
+    end)
+    b:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", (i == 1) and 0 or 0, (i == 1) and -16 or -6)
+    prev = b
+  end
+
+  local clearBtn = cw:CreateButton(f, "Clear all toasts", 180, 24, function()
+    cw:ClearToasts()
+  end)
+  clearBtn:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -16)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Slash registry — docs + example
+-- ============================================================================
+
+pages.slash = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT",   f, "RIGHT",   -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("RegisterSlashCommands wires SLASH_X1/X2 + SlashCmdList + tokenizing + auto-help. The button below registers a sample "
+              .. "/cogdemo command at runtime so you can try it in chat (try /cogdemo, /cogdemo help, /cogdemo greet world).")
+
+  local registered = false
+  cw:CreateButton(f, "Register /cogdemo", 200, 28, function()
+    if registered then
+      cw:Print("Cogworks", "/cogdemo already registered — try it in chat.")
+      return
+    end
+    cw:RegisterSlashCommands("CogworksDemo", {
+      globals   = { "/cogdemo" },
+      helpStyle = "popup",
+      default   = function() cw:Print("Cogworks", "Try /cogdemo help") end,
+      commands  = {
+        { name = "greet", help = "Print a greeting", args = "<name>",
+          run = function(args) cw:Print("Cogworks", "hello, " .. (args ~= "" and args or "world") .. "!") end },
+        { name = "toast", help = "Fire a sample toast",
+          run = function() cw:Toast({ text = "Triggered by /cogdemo toast", severity = "success" }) end },
+      },
+    })
+    registered = true
+    cw:Print("Cogworks", "/cogdemo registered. Try /cogdemo, /cogdemo help, /cogdemo greet world, /cogdemo toast.")
+  end):SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
   return f
 end
 

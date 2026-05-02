@@ -26,5 +26,10 @@
     <Script file="ReorderableList.lua" />
     <Script file="SegmentedControl.lua" />
     <Script file="Scaling.lua" />
+    <Script file="Debug.lua" />
+    <Script file="ThemedMainFrame.lua" />
+    <Script file="Drawer.lua" />
+    <Script file="Slash.lua" />
+    <Script file="Toast.lua" />
 
 </Ui>

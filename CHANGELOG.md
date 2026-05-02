@@ -2,6 +2,29 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.13.0] — 2026-05-02 — Debug toolkit, ThemedMainFrame, Drawer, Slash, Toast
+
+Bumps MINOR from `16` to `17`. Resolves cogworks #14 (ThemedMainFrame), #15 (Drawer), #16 (Slash registry), #17 (Toast). Adds the per-cog **debug toolkit** that consumer cogs can adopt out of the box (logger + inspectors + profiler + console widget + state-dump dialog + lib-side debug bridge). Standalone Cogworks now ships its own gear-bordered minimap button.
+
+### Added
+
+- **Debug toolkit** (`Cogworks-1.0/Debug.lua`) — per-cog state, all keyed by `cogName`:
+  - **Logger**: `lib:RegisterDebugLogger(cog, opts)` returns a logger object with `:PrintDebug(...)`, `:GetEntries()`, `:Clear()`, `:OnAppend(cb)`, `:SetEnabled(b)`/`:IsEnabled()`. 500-line ring buffer (configurable). Chat echo gated by enabled flag; lib also exposes the bare entrypoints `lib:DebugPrint(cog, ...)`, `lib:ClearDebugLog(cog)`, etc.
+  - **Inspectors**: `lib:RegisterDebugInspector(cog, name, fn)` registers a named state accessor; `lib:DumpDebugState(cog)` concatenates all inspectors + suite settings + profile stats + recent log into one copy-friendly blob.
+  - **Profiler**: `lib:Profile(cog, label, fn, ...)` wraps a call with `debugprofilestop()` timing. Per-label `{count, total, last, max, avg}` counters; `lib:GetProfileStats(cog)` / `lib:ResetProfileStats(cog)`. Skips timing when the cog's debug is disabled — zero overhead in production.
+  - **Actions**: `lib:RegisterDebugAction(cog, label, fn)` adds a button to the dashboard.
+  - **Serializer**: `lib:SerializeDebugValue(v, opts)` — recursive table-to-text printer, cycle-safe, sorted keys, biased toward defect-report readability.
+  - **`lib:CreateDebugConsole(opts)`** — dashboard frame for one cog. Tabbed surfaces (Actions / Inspectors / Profile / Log), status row with toggle, copy-friendly state dumps, live-updated log, movable + resizable, optional persistence.
+  - **`lib:CreateCopyDialog(text, hint?)`** — modal popup with read-only multi-line EditBox + Ctrl+A/C copy. Resizable; auto-highlights for one-stroke copy.
+  - **`LibDebug` event + bridge** — new event name `LibDebug`. Lib internals fire it (via `lib:_LibDebugPrint(msg, scope?)`); every registered cog logger auto-subscribes and tags the entry `[Cogworks-1.0/<scope>]` in its own ring buffer. A single console shows both cog activity and lib activity without any wiring on the cog's end.
+- **`lib:CreateThemedMainFrame(opts)`** (`Cogworks-1.0/ThemedMainFrame.lua`, #14) — one-call main window chrome: title bar (title + dim version), summary bar (optional one-line status), sidebar with drag-to-resize handle, content area, diagonal-dot resize grip, ESC-to-close, persisted geometry. `frame:AddNavItem(item)` / `frame:SetActivePage(key)` / `frame:SetSummary(text)` / `frame:SetPageBuilder(key, fn)` cover the common surface; auto-subscribes to `SettingsChanged.uiScale`. Replaces the ~300 LOC of chrome each cog hand-rolls in its `UI/MainFrame.lua`.
+- **`lib:CreateDrawer(opts)`** (`Cogworks-1.0/Drawer.lua`, #15) — non-modal floating panel for tool drawers, context drawers, side popups. Title bar + close + drag, optional resizable + grip, optional anchor-to-parent on Show, ESC handler, persisted geometry. Distinct from `CreatePopup` (modal blocking) and `CreateMiniView` (heads-up). `drawer:Toggle()` / `:SetTitle()` / `:SetOnClose()` / `:SetAnchorTo()`.
+- **`lib:RegisterSlashCommands(addonName, opts)`** (`Cogworks-1.0/Slash.lua`, #16) — owns SLASH_X1/SLASH_X2/SlashCmdList wiring + tokenizing input + case-insensitive subcommand match + auto-help (chat / popup / both). Each command gets `name`, `run`, optional `help`, `args`, `aliases`, `hidden`. `lib:AddSlashCommand(addonName, command)` for plugin-style late registration.
+- **`lib:Toast(opts)`** (`Cogworks-1.0/Toast.lua`, #17) — transient banner with fade-in / fade-out, vertical stacking, severity → theme color mapping (`success` / `info` / `warning` / `error`), optional icon + onClick. Auto-dismiss after `duration` (default 3 s); pause-on-hover; click-to-dismiss; `lib:ClearToasts()` to flush all live toasts. Anchor configurable via `cw:SetSetting("toastAnchor", { point, relPoint, x, y })`.
+- **Standalone Cogworks minimap button** — the standalone install now registers its own gear-bordered LDBIcon button via the suite's own `RegisterCogMinimapButton` primitive (meta-validation that the API works for its own addon). Left-click opens the UI showcase, right-click opens the dev console. SV under `CogworksDB.minimap`. Adds LDB + LDBIcon to the standalone TOC + .pkgmeta externals.
+- **Mesh-spin easter egg** on cog minimap buttons — hovering or clicking any registered cog suite minimap button briefly spins (1 rotation, ~1.2 s) every other registered button. One-shot animation per cog so it stays cheap; skipped when an animation is already playing. Wired into `RegisterCogMinimapButton` so every cog gets the behavior automatically.
+- **`/cogworks debug`** slash subcommand — toggles a `CreateDebugConsole({ cog = "Cogworks" })` instance for testing the toolkit against the standalone install.
+
 ## [0.12.0] — 2026-05-01 — Suite settings persistence + Phase D primitives
 
 Bumps MINOR from `15` to `16`. Resolves cogworks #22 (suite-wide settings persistence) and the Phase D primitive batch (#21, #20, #19, #18). Theme / scale / font / profile settings now persist whether or not the standalone Cogworks addon is installed.
