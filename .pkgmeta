@@ -18,14 +18,13 @@ externals:
   Libs/CallbackHandler-1.0:
     url: https://repos.wowace.com/wow/callbackhandler/trunk/CallbackHandler-1.0
     tag: latest
-  # LDB + LDBIcon power the standalone minimap button. Standalone-only —
-  # sibling cogs already vendor their own copies via their own .pkgmeta.
-  Libs/LibDataBroker-1.1:
-    url: https://repos.wowace.com/wow/libdatabroker-1-1/trunk
-    tag: latest
-  Libs/LibDBIcon-1.0:
-    url: https://repos.curseforge.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
-    tag: latest
+  # NOTE: LibDataBroker-1.1 and LibDBIcon-1.0 are vendored under Libs/
+  # rather than fetched as externals. The wowace SVN host (used for the
+  # historical libdatabroker-1-1 mirror) periodically returns 500/502 errors
+  # mid-build, breaking releases. FlipQueue made the same call for the same
+  # reason — see C:/src/flipqueue/.pkgmeta. Lib upgrades happen by manually
+  # refreshing the vendored copies; that's a rare enough cadence that the
+  # build-stability win is worth the small maintenance cost.
 
 ignore:
   - "*.md"
