@@ -36,7 +36,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 15
+local MODULE_MINOR = 16
 lib._modules = lib._modules or {}
 if (lib._modules.Tree or 0) >= MODULE_MINOR then return end
 lib._modules.Tree = MODULE_MINOR
@@ -63,6 +63,13 @@ function lib:CreateTree(parent, opts)
   content:SetWidth(1)
   content:SetHeight(1)
   scroll:SetScrollChild(content)
+
+  -- Keep the scroll child's width pinned to the viewport. Without this the
+  -- content frame stays at width=1 and rows anchored TOPRIGHT to content
+  -- collapse to 1px wide — invisible backdrop, no clickable area.
+  scroll:HookScript("OnSizeChanged", function(sf, w, h)
+    content:SetWidth(math.max(1, w))
+  end)
 
   scroll:EnableMouseWheel(true)
   scroll:SetScript("OnMouseWheel", function(sf, delta)

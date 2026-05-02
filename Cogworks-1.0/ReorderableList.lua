@@ -36,7 +36,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 15
+local MODULE_MINOR = 16
 lib._modules = lib._modules or {}
 if (lib._modules.ReorderableList or 0) >= MODULE_MINOR then return end
 lib._modules.ReorderableList = MODULE_MINOR
@@ -64,6 +64,14 @@ function lib:CreateReorderableList(parent, opts)
   content:SetWidth(1)
   content:SetHeight(1)
   scroll:SetScrollChild(content)
+
+  -- Keep the scroll child's width pinned to the viewport. Without this the
+  -- content frame stays at width=1 and rows anchored to content's right
+  -- edge collapse to 1px wide — invisible backdrop, no drop target.
+  scroll:HookScript("OnSizeChanged", function(sf, w, h)
+    content:SetWidth(math.max(1, w))
+  end)
+
   scroll:EnableMouseWheel(true)
   scroll:SetScript("OnMouseWheel", function(sf, delta)
     local range = math.max(0, content:GetHeight() - sf:GetHeight())
@@ -95,6 +103,9 @@ function lib:CreateReorderableList(parent, opts)
     row.handle:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.4)
 
     row:EnableMouse(true)
+    -- StartMoving silently no-ops without SetMovable(true), so without this
+    -- the row state would change on drag but the frame would stay put.
+    row:SetMovable(true)
     row:RegisterForDrag("LeftButton")
     return row
   end
@@ -173,6 +184,12 @@ function lib:CreateReorderableList(parent, opts)
       end)
 
       row:SetScript("OnDragStop", function(r)
+        -- Re-entrancy guard: refresh() below calls releaseRow → Hide on the
+        -- still-dragged row, and Hide on a movable frame re-fires OnDragStop.
+        -- Without the guard the second pass tries to index a now-nil
+        -- `dragging` upvalue.
+        if not dragging then return end
+
         r:StopMovingOrSizing()
         r:SetFrameStrata("MEDIUM")
         r:SetBackdropBorderColor(unpack(T.border))

@@ -24,5 +24,7 @@
     <Script file="Wizard.lua" />
     <Script file="Tree.lua" />
     <Script file="ReorderableList.lua" />
+    <Script file="SegmentedControl.lua" />
+    <Script file="Scaling.lua" />
 
 </Ui>

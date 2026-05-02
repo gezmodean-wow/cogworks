@@ -2,6 +2,33 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.12.0] — 2026-05-01 — Suite settings persistence + Phase D primitives
+
+Bumps MINOR from `15` to `16`. Resolves cogworks #22 (suite-wide settings persistence) and the Phase D primitive batch (#21, #20, #19, #18). Theme / scale / font / profile settings now persist whether or not the standalone Cogworks addon is installed.
+
+### Added
+
+- **`CogworksSharedDB` shared persistence** — every cog declares `## SavedVariables: CogworksSharedDB` in its TOC; the lib hooks `ADDON_LOADED` / `PLAYER_LOGIN` / `PLAYER_LOGOUT` and reads/writes the active profile regardless of whether standalone Cogworks is installed. One-shot migration from the legacy `CogworksDB` runs the first time a session sees `schemaVersion == nil`. Standalone's parallel persistence block was removed; `CogworksDB` stays declared for one release as a downgrade safety net. (#22)
+- **Profile system** — named bundles of settings stored under `CogworksSharedDB.profiles[name]`. New API: `lib:GetProfileNames`, `lib:GetActiveProfile`, `lib:SetActiveProfile`, `lib:CreateProfile(name, copyFrom?)`, `lib:DeleteProfile`, `lib:RenameProfile`, `lib:ExportProfile`, `lib:ImportProfile`. Profile switch fires `SettingsChanged` for every known key so font/theme/scale subscribers reflow. (#22)
+- **Per-cog override (`fontScale` + `fontFamily`)** — `lib:SetCogProfile(cog, profileName)` points a cog at a different profile for its overridable settings while the rest of the suite stays on `activeProfile`. v1 override surface is intentionally narrow: `fontScale` and `fontFamily`. `uiScale`, `theme`, and `customThemes` stay suite-wide because their state is shared by mutable theme tables / FontObjects that every widget already references directly. New API: `lib:GetCogProfile`, `lib:SetCogProfile`, `lib:GetCogSetting(cog, key)`, `lib:GetCogTheme(cog)`. (#22)
+- **Per-cog font resolution** — `lib:GetFont(key, cogName?)` returns a cog-specific FontObject when that cog has an active override; untagged calls keep returning the suite-active fonts (back-compat). The font set is rebuilt lazily via `lib:_RefreshCogFonts(cog)` on profile switch. (#22)
+- **`lib:CreateUIScalingSettingsBlock(parent, opts)`** (`Cogworks-1.0/Scaling.lua`) — drop-in section for any cog's settings page. Profile dropdown with `[+ New] [Export] [Import]`, font/UI scale sliders, font family + theme dropdowns, reset button, and a per-cog override row when `opts.cog` is provided. Reflects external `SettingsChanged` events. (#18)
+- **`lib:RegisterScalingFrame(frame, opts)`** — subscribes a frame to `SettingsChanged` for `uiScale` so `SetScale` fires automatically. Optionally persists `{x, y, w, h}` into a caller-owned SV table on `OnDragStop` / `OnSizeChanged`. (#18)
+- **`lib:CreateSegmentedControl(parent, opts)`** (`Cogworks-1.0/SegmentedControl.lua`) — horizontal pill-button group with one-active invariant. Sizes `small` / `normal` / `large`. Auto-widths each pill from its label + padding; reflows on `SettingsChanged` for fontScale/fontFamily. Distinct from `CreateTabPanel` (which owns content swap) and `CreateNavButton` (sidebar shape). (#19)
+- **`lib:CreateSettingsInput` validate + suffix + Flash** (`Cogworks-1.0/Forms.lua`, MODULE_MINOR 14 → 15) — three additive opts: `validate(value) -> ok, errMsg` reverts and red-flashes on failure; `suffix` renders a dim "hours" / "%" label right of the input; `row:Flash(errMsg)` exposes the same flash for backend-side rejections. Returned row also has `GetSuffix` / `SetSuffix`. (#20)
+- **`lib:CreateSectionHeader` opts-table form** — second arg can now be `{ text, rule, anchor = {frame, point}, gap, color }`. `rule = true` adds a 1px theme.border underline; `anchor` lets sections cascade off siblings instead of always anchoring TOPLEFT to the parent. Legacy positional `(parent, "TEXT", -8)` keeps working unchanged. (#21)
+
+### Fixed
+
+- **`Tree` and `ReorderableList` rows render full-width** (MODULE_MINOR 15 → 16 each). The scroll content frame was hardcoded to width 1; rows anchored TOPRIGHT to content ended up 1px wide, leaving them with no clickable area and an invisible backdrop. Both modules now hook the scroll's `OnSizeChanged` to keep `content:SetWidth` in lockstep with the viewport.
+- **`MiniView` close + pin buttons are visible** (MODULE_MINOR 15 → 16). Replaced the 16px `UI-Panel-MinimizeButton-Up` close glyph (mostly transparent at that size) with the standard `UIPanelCloseButton` template at 20px, and switched the pin to `LockButton-{Locked,Unlocked}-Up` so the locked / unlocked state reads at a glance.
+- **`ReorderableList` rows are draggable** (MODULE_MINOR 16). Two latent bugs: (1) `row:StartMoving()` silently no-ops without `SetMovable(true)`, so the row state changed on drag but the frame stayed put — added `SetMovable(true)` in `acquireRow`. (2) `OnDragStop` calling `refresh()` triggers `releaseRow → Hide` on the still-being-dragged row, and `Hide` on a dragged frame re-fires `OnDragStop`; the second pass tried to index the now-nil `dragging` upvalue. Added a re-entrancy guard at the top of `OnDragStop`.
+- **Standalone showcase sidebar nav no longer overflows**. The 16 `CreateNavButton` rows ×32 px each ran past the ~448 px sidebar even at 1.0× scale; at 1.4× the bottom four pages were unreachable. Wrapped the nav stack in a `ScrollFrame` with mouse-wheel scrolling so any number of pages stays accessible regardless of font/UI scale. Also bounded `CreateNavButton`'s label with a RIGHT anchor and `SetWordWrap(false)` so longer labels (e.g. "Reorderable") clip cleanly at the button edge instead of extending past the sidebar at high font scales.
+
+### Notes
+
+- The shared SV requires every consumer cog's TOC to declare `## SavedVariables: CogworksSharedDB`. Cogs that haven't yet adopted the declaration will continue to work, but their session will run with in-memory settings only — exactly the same behavior as before this release.
+
 ## [0.11.0] — Phase A/B/C UI primitive set
 
 Bumps MINOR from `12` to `15`. The full primitive set called for in cogworks issue #1 — the FlipQueue migration toolkit, plus Tempo / Maxcraft / Tally rebuilds. Per-module load guards landed in this release so older vendored copies in sibling cogs no longer clobber newer methods.

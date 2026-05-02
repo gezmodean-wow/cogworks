@@ -25,7 +25,7 @@ assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires C
 -- because every consumer ships the same external, the path resolves either way.
 local LIB_LOADER_ADDON = ...
 
-local MAJOR, MINOR = "Cogworks-1.0", 15
+local MAJOR, MINOR = "Cogworks-1.0", 16
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -35,7 +35,7 @@ lib.loaderAddon = lib.loaderAddon or LIB_LOADER_ADDON
 -- Version
 -- ============================================================================
 
-lib.version      = "0.11.0"  -- human-facing semver of the Cogworks suite
+lib.version      = "0.12.0"  -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -279,6 +279,12 @@ function lib:SetTheme(name)
         self.Theme[k] = copyColor(src[k])
       end
     end
+  end
+  -- Write-through to the active profile (theme is suite-wide, never per-cog).
+  local db = _G.CogworksSharedDB
+  if db and db.profiles and db.activeProfile then
+    local p = db.profiles[db.activeProfile]
+    if p then p.theme = name end
   end
   self:Fire(self.Events.SettingsChanged, "theme", name, nil)
 end
@@ -592,6 +598,16 @@ function lib:SetSetting(key, value)
   if old == value then return end
   self.settings[key] = value
   if key == "fontScale" or key == "fontFamily" then self:UpdateFonts() end
+  -- Write-through to the active profile so changes survive even if the
+  -- PLAYER_LOGOUT persist pass doesn't fire (e.g. game crash). The SV may
+  -- not be visible yet at very early load; in that case the next ADDON_LOADED
+  -- init pass will re-seed lib.settings from the persisted profile, so we
+  -- silently no-op here.
+  local db = _G.CogworksSharedDB
+  if db and db.profiles and db.activeProfile then
+    local p = db.profiles[db.activeProfile]
+    if p then p[key] = value end
+  end
   self:Fire(self.Events.SettingsChanged, key, value, old)
 end
 
@@ -670,7 +686,14 @@ function lib:UpdateFonts()
   end
 end
 
-function lib:GetFont(key)
+-- GetFont(key) returns the suite-active FontObject; GetFont(key, cogName)
+-- returns the cog-specific FontObject when that cog has an active override
+-- (see :SetCogProfile). Untagged callers always get the suite-active set,
+-- preserving back-compat.
+function lib:GetFont(key, cogName)
+  if cogName and self._cogFonts and self._cogFonts[cogName] and self._cogFonts[cogName][key] then
+    return self._cogFonts[cogName][key]
+  end
   if not self.Fonts[key] then
     local def = FONT_DEFS[key]
     if def then ensureFontObject(key, def) end
@@ -679,6 +702,300 @@ function lib:GetFont(key)
 end
 
 lib:UpdateFonts()
+
+-- ============================================================================
+-- Persistent settings (CogworksSharedDB) + profile system
+-- ============================================================================
+-- The library owns suite-wide persistence. Every consumer cog declares
+-- `## SavedVariables: CogworksSharedDB` in its TOC and the lib's own
+-- ADDON_LOADED handler initializes the SV the first time it becomes visible.
+-- A one-shot migration pulls settings from legacy CogworksDB on first run.
+--
+-- Schema (CogworksSharedDB):
+--   {
+--     schemaVersion = 1,
+--     activeProfile = "Default",
+--     profiles = {
+--       [name] = { fontScale, uiScale, fontFamily, theme, customThemes? }
+--     },
+--     cogOverrides = { [cogName] = profileName },
+--   }
+--
+-- Override surface: only `fontScale` and `fontFamily` are per-cog. `uiScale`,
+-- `theme`, and `customThemes` stay suite-wide because their state lives in
+-- mutable theme tables and FontObjects already referenced by every widget.
+
+lib._cogFonts    = lib._cogFonts or {}  -- [cogName] = { normal, small, large, header }
+lib._dbInitDone  = lib._dbInitDone or false
+
+local function newDefaultProfile()
+  local p = {}
+  for k, v in pairs(SETTING_DEFAULTS) do p[k] = v end
+  return p
+end
+
+-- Idempotent. Creates the SV table + a Default profile, and runs the
+-- one-shot CogworksDB → CogworksSharedDB migration when schemaVersion is nil.
+local function ensureSharedDB()
+  _G.CogworksSharedDB = _G.CogworksSharedDB or {}
+  local db = _G.CogworksSharedDB
+  if not db.schemaVersion then
+    db.schemaVersion = 1
+    db.activeProfile = db.activeProfile or "Default"
+    db.profiles      = db.profiles      or {}
+    db.cogOverrides  = db.cogOverrides  or {}
+
+    local default = newDefaultProfile()
+    local legacy  = _G.CogworksDB
+    if legacy and type(legacy.settings) == "table" then
+      for k, v in pairs(legacy.settings) do
+        if SETTING_DEFAULTS[k] ~= nil then default[k] = v end
+      end
+    end
+    if legacy and type(legacy.customThemes) == "table" then
+      default.customThemes = legacy.customThemes
+    end
+    db.profiles.Default = db.profiles.Default or default
+  end
+
+  -- Defensive: a prior session set schemaVersion but the active profile entry
+  -- may have been deleted manually. Rebuild as default.
+  db.activeProfile = db.activeProfile or "Default"
+  db.profiles      = db.profiles      or {}
+  db.cogOverrides  = db.cogOverrides  or {}
+  if not db.profiles[db.activeProfile] then
+    db.profiles[db.activeProfile] = newDefaultProfile()
+  end
+  return db
+end
+
+-- Copy active profile values into lib.settings + apply derived state (fonts,
+-- theme). Idempotent.
+local function loadActiveProfile()
+  local db = ensureSharedDB()
+  local p  = db.profiles[db.activeProfile]
+  for k, v in pairs(SETTING_DEFAULTS) do
+    lib.settings[k] = (p[k] ~= nil) and p[k] or v
+  end
+  if type(p.customThemes) == "table" then
+    for name, data in pairs(p.customThemes) do
+      lib.CustomThemes[name] = data
+    end
+  end
+  lib:UpdateFonts()
+  if p.theme then lib:SetTheme(p.theme) end
+  -- Rebuild any per-cog font registries that survived an in-session reload.
+  for cog in pairs(lib._cogFonts) do
+    lib:_RefreshCogFonts(cog)
+  end
+end
+
+-- Write lib.settings + custom themes back to the active profile. Called from
+-- PLAYER_LOGOUT; SetSetting / SetTheme already write through immediately, so
+-- this is mostly a backstop for any direct lib.settings mutation.
+local function persistActiveProfile()
+  local db = ensureSharedDB()
+  local p  = db.profiles[db.activeProfile]
+  for k in pairs(SETTING_DEFAULTS) do
+    p[k] = lib.settings[k]
+  end
+  p.theme = lib.activeThemeName or p.theme
+  if next(lib.CustomThemes) then
+    p.customThemes = lib.CustomThemes
+  else
+    p.customThemes = nil
+  end
+end
+
+-- ---- Profile API ----------------------------------------------------------
+
+function lib:GetProfileNames()
+  local db = ensureSharedDB()
+  local list = {}
+  for name in pairs(db.profiles) do list[#list + 1] = name end
+  table.sort(list)
+  return list
+end
+
+function lib:GetActiveProfile()
+  return ensureSharedDB().activeProfile
+end
+
+function lib:SetActiveProfile(name)
+  local db = ensureSharedDB()
+  if not db.profiles[name] then
+    return false, "No profile named " .. tostring(name)
+  end
+  if db.activeProfile == name then return true end
+  -- Persist the OLD profile's in-memory state before switching.
+  persistActiveProfile()
+  local old = db.activeProfile
+  db.activeProfile = name
+  loadActiveProfile()
+  -- Fire fine-grained events first so font/theme/scale subscribers reflow,
+  -- then announce the profile change itself.
+  for k in pairs(SETTING_DEFAULTS) do
+    self:Fire(self.Events.SettingsChanged, k, self.settings[k], nil)
+  end
+  self:Fire(self.Events.SettingsChanged, "activeProfile", name, old)
+  return true
+end
+
+function lib:CreateProfile(name, copyFrom)
+  if type(name) ~= "string" or name == "" then return false, "Name required" end
+  local db = ensureSharedDB()
+  if db.profiles[name] then return false, "Profile already exists: " .. name end
+  local p
+  if copyFrom and db.profiles[copyFrom] then
+    -- Persist live state into the source profile first so the copy reflects
+    -- whatever the user has changed in this session.
+    if copyFrom == db.activeProfile then persistActiveProfile() end
+    p = {}
+    for k, v in pairs(db.profiles[copyFrom]) do
+      if type(v) == "table" then
+        local t = {}
+        for kk, vv in pairs(v) do t[kk] = vv end
+        p[k] = t
+      else
+        p[k] = v
+      end
+    end
+  else
+    p = newDefaultProfile()
+  end
+  db.profiles[name] = p
+  return true
+end
+
+function lib:DeleteProfile(name)
+  local db = ensureSharedDB()
+  if name == db.activeProfile then return false, "Cannot delete the active profile" end
+  if not db.profiles[name] then return false, "No profile named " .. name end
+  db.profiles[name] = nil
+  -- Drop any cog overrides that pointed at the deleted profile.
+  for cog, p in pairs(db.cogOverrides) do
+    if p == name then
+      db.cogOverrides[cog] = nil
+      self._cogFonts[cog] = nil
+      self:Fire(self.Events.SettingsChanged, "cogProfile", cog, name)
+    end
+  end
+  return true
+end
+
+function lib:RenameProfile(oldName, newName)
+  local db = ensureSharedDB()
+  if not db.profiles[oldName] then return false, "No profile named " .. oldName end
+  if db.profiles[newName] then return false, "Profile already exists: " .. newName end
+  if type(newName) ~= "string" or newName == "" then return false, "Name required" end
+  db.profiles[newName] = db.profiles[oldName]
+  db.profiles[oldName] = nil
+  if db.activeProfile == oldName then db.activeProfile = newName end
+  for cog, p in pairs(db.cogOverrides) do
+    if p == oldName then db.cogOverrides[cog] = newName end
+  end
+  return true
+end
+
+function lib:ExportProfile(name)
+  local db = ensureSharedDB()
+  local p  = db.profiles[name]
+  if not p then return nil, "No profile named " .. tostring(name) end
+  if name == db.activeProfile then persistActiveProfile() end
+  local parts = { "CogworksProfile:" .. name }
+  for _, k in ipairs({ "fontScale", "uiScale", "fontFamily", "theme" }) do
+    if p[k] ~= nil then
+      parts[#parts + 1] = k .. "=" .. tostring(p[k])
+    end
+  end
+  return table.concat(parts, "|")
+end
+
+function lib:ImportProfile(str)
+  if type(str) ~= "string" or str == "" then return nil, "Empty string" end
+  local name = str:match("^CogworksProfile:([^|]+)")
+  if not name then return nil, "Invalid format" end
+  local db = ensureSharedDB()
+  -- Append (n) suffix if name collides so an import never silently replaces.
+  local final, n = name, 1
+  while db.profiles[final] do
+    n = n + 1
+    final = name .. " (" .. n .. ")"
+  end
+  local p = newDefaultProfile()
+  for k, v in str:gmatch("([%w]+)=([^|]+)") do
+    if k == "fontScale" or k == "uiScale" then
+      p[k] = tonumber(v) or p[k]
+    elseif k == "fontFamily" or k == "theme" then
+      p[k] = v
+    end
+  end
+  db.profiles[final] = p
+  return final
+end
+
+-- ---- Per-cog override -----------------------------------------------------
+
+function lib:GetCogProfile(cogName)
+  local db = ensureSharedDB()
+  return db.cogOverrides[cogName]
+end
+
+function lib:SetCogProfile(cogName, profileName)
+  local db  = ensureSharedDB()
+  local old = db.cogOverrides[cogName]
+  if profileName == old then return true end
+  if profileName ~= nil and not db.profiles[profileName] then
+    return false, "No profile named " .. tostring(profileName)
+  end
+  db.cogOverrides[cogName] = profileName
+  if profileName == nil then
+    self._cogFonts[cogName] = nil
+  else
+    self:_RefreshCogFonts(cogName)
+  end
+  self:Fire(self.Events.SettingsChanged, "cogProfile", cogName, old)
+  return true
+end
+
+function lib:GetCogSetting(cogName, key)
+  local db    = ensureSharedDB()
+  local pName = db.cogOverrides[cogName]
+  -- Only fontScale + fontFamily are per-cog overridable; other keys always
+  -- read from the suite-active settings.
+  if pName and (key == "fontScale" or key == "fontFamily") then
+    local p = db.profiles[pName]
+    if p and p[key] ~= nil then return p[key] end
+  end
+  return self.settings[key]
+end
+
+function lib:GetCogTheme(cogName)
+  -- Theme is suite-wide; per-cog overrides do not affect it.
+  return self.activeThemeName
+end
+
+-- Rebuild the per-cog FontObject set using the cog's effective override.
+-- Called when a cog gains an override and after Scaling.lua's slider edits
+-- the override profile's font settings directly.
+function lib:_RefreshCogFonts(cogName)
+  local familyKey = self:GetCogSetting(cogName, "fontFamily") or "default"
+  local scale     = self:GetCogSetting(cogName, "fontScale") or 1.0
+  scale = math.max(0.8, math.min(1.4, scale))
+  local fontPath  = self:GetFontPath(familyKey)
+  self._cogFonts[cogName] = self._cogFonts[cogName] or {}
+  for key, def in pairs(FONT_DEFS) do
+    local foName = "CogworksFont_" .. cogName .. "_" .. key
+    local fo = self._cogFonts[cogName][key]
+    if not fo then
+      fo = CreateFont(foName)
+      fo:CopyFontObject(def.base)
+      self._cogFonts[cogName][key] = fo
+    end
+    local _, _, flags = fo:GetFont()
+    fo:SetFont(fontPath, math.floor(def.size * scale + 0.5), flags or "")
+  end
+end
 
 -- ============================================================================
 -- Suite roster
@@ -1120,15 +1437,57 @@ function lib:CreateIconButton(parent, icon, size, tooltip, onClick)
   return btn
 end
 
-function lib:CreateSectionHeader(parent, text, yOffset)
+-- CreateSectionHeader supports two call shapes:
+--
+--   Legacy positional: cw:CreateSectionHeader(parent, "TEXT", -8)
+--     Always anchors TOPLEFT/RIGHT to the parent.
+--
+--   Opts table:        cw:CreateSectionHeader(parent, { text=..., rule=true,
+--                                                       anchor={prevHeader, "BOTTOMLEFT"},
+--                                                       gap=12, color={...} })
+--     - text     : header text (uppercased)
+--     - rule     : when true, adds a 1px theme.border underline
+--     - anchor   : { frame, point } — anchor TOPLEFT to frame at point.
+--                  Lets section headers cascade off siblings instead of
+--                  always anchoring to the parent.
+--     - gap      : pixel offset from the anchor point (default 0; for
+--                  legacy mode this is the yOffset arg)
+--     - color    : { r, g, b, a } — defaults to theme textDim
+function lib:CreateSectionHeader(parent, textOrOpts, yOffset)
   local T = self.Theme
+  local opts
+  if type(textOrOpts) == "table" then
+    opts = textOrOpts
+  else
+    opts = { text = textOrOpts, gap = yOffset }
+  end
+  local color = opts.color or T.textDim
+  local gap   = opts.gap or 0
+
   local h = parent:CreateFontString(nil, "OVERLAY")
   h:SetFontObject(self.Fonts.header)
-  h:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, yOffset or 0)
-  h:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
+  if opts.anchor then
+    local af, ap = opts.anchor[1], opts.anchor[2] or "BOTTOMLEFT"
+    h:SetPoint("TOPLEFT", af, ap, 0, gap)
+    h:SetPoint("RIGHT",   parent, "RIGHT", -8, 0)
+  else
+    h:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, gap)
+    h:SetPoint("RIGHT",   parent, "RIGHT", -8, 0)
+  end
   h:SetJustifyH("LEFT")
-  h:SetText((text or ""):upper())
-  h:SetTextColor(unpack(T.textDim))
+  h:SetText((opts.text or ""):upper())
+  h:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+
+  if opts.rule then
+    -- 1px underline keyed off theme.border. Anchored to the header's bottom
+    -- so it follows the header when fontScale changes.
+    local rule = parent:CreateTexture(nil, "OVERLAY")
+    rule:SetHeight(1)
+    rule:SetPoint("TOPLEFT",  h, "BOTTOMLEFT",  0, -2)
+    rule:SetPoint("TOPRIGHT", h, "BOTTOMRIGHT", 0, -2)
+    rule:SetColorTexture(T.border[1], T.border[2], T.border[3], T.border[4] or 1)
+    h.rule = rule
+  end
   return h
 end
 
@@ -1203,7 +1562,13 @@ function lib:CreateNavButton(parent, navItem, onClick)
 
   btn.label = btn:CreateFontString(nil, "OVERLAY")
   btn.label:SetFontObject(self.Fonts.normal)
-  btn.label:SetPoint("LEFT", btn, "LEFT", navItem.icon and 34 or 12, 0)
+  btn.label:SetPoint("LEFT",  btn, "LEFT",  navItem.icon and 34 or 12, 0)
+  -- Bound the right edge and disable wrap so labels clip cleanly at the
+  -- button width when the user runs at fontScale=1.4 instead of overflowing
+  -- past the button's visual boundary.
+  btn.label:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
+  btn.label:SetJustifyH("LEFT")
+  btn.label:SetWordWrap(false)
   btn.label:SetText(navItem.label or "")
   btn.label:SetTextColor(unpack(T.textDim))
 
@@ -2075,15 +2440,36 @@ end
 -- ============================================================================
 -- Initialization hook
 -- ============================================================================
--- Cogworks fires its Ready event once at PLAYER_LOGIN. Cogs that need to wait
--- for the full login sequence before touching Cogworks state can listen on it.
+-- ADDON_LOADED — initialize CogworksSharedDB the first time it becomes
+--                visible (any consumer cog that declares the SV in its TOC
+--                triggers this). Migrates from legacy CogworksDB on first run.
+-- PLAYER_LOGIN — final fallback init for sessions where no cog declared the
+--                SV (in-memory only); fires lib.Events.Ready for subscribers.
+-- PLAYER_LOGOUT — backstop persist of the active profile. SetSetting /
+--                 SetTheme already write through, but this catches anyone
+--                 who mutated lib.settings directly.
 
 if not lib._readyFrame then
   lib._readyFrame = CreateFrame("Frame")
+  lib._readyFrame:RegisterEvent("ADDON_LOADED")
   lib._readyFrame:RegisterEvent("PLAYER_LOGIN")
-  lib._readyFrame:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_LOGIN" then
+  lib._readyFrame:RegisterEvent("PLAYER_LOGOUT")
+  lib._readyFrame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "ADDON_LOADED" then
+      if not lib._dbInitDone and (_G.CogworksSharedDB ~= nil or _G.CogworksDB ~= nil) then
+        ensureSharedDB()
+        loadActiveProfile()
+        lib._dbInitDone = true
+      end
+    elseif event == "PLAYER_LOGIN" then
+      if not lib._dbInitDone then
+        ensureSharedDB()
+        loadActiveProfile()
+        lib._dbInitDone = true
+      end
       lib:Fire(lib.Events.Ready)
+    elseif event == "PLAYER_LOGOUT" then
+      if lib._dbInitDone then persistActiveProfile() end
     end
   end)
 end

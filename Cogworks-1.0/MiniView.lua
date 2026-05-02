@@ -41,7 +41,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 15
+local MODULE_MINOR = 16
 lib._modules = lib._modules or {}
 if (lib._modules.MiniView or 0) >= MODULE_MINOR then return end
 lib._modules.MiniView = MODULE_MINOR
@@ -128,23 +128,27 @@ function lib:CreateMiniView(opts)
   titleText:SetText(opts.title or opts.name)
   titleText:SetTextColor(unpack(T.text))
 
-  local closeBtn = self:CreateIconButton(
-    titleBar,
-    "Interface\\Buttons\\UI-Panel-MinimizeButton-Up",
-    16, "Close", function()
-      frame:Hide()
-      if opts.onClose then opts.onClose() end
-    end)
-  closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -4, 0)
+  -- Close button: UIPanelCloseButton at 20px reads cleanly. The earlier
+  -- 16px UI-Panel-MinimizeButton-Up sourced from CreateIconButton was mostly
+  -- transparent at that size, so users couldn't see where to click.
+  local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+  closeBtn:SetSize(20, 20)
+  closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -2, 0)
+  closeBtn:SetScript("OnClick", function()
+    frame:Hide()
+    if opts.onClose then opts.onClose() end
+  end)
 
   -- Pin toggle: lock position + hide drag affordance + hide grip.
+  -- LockButton-{Locked,Unlocked}-Up is the standard padlock glyph used across
+  -- Blizzard UIs; it reads as "lock state" at a glance, unlike the previous
+  -- WorldMap dot which had no semantic ring to it.
   local pinBtn = CreateFrame("Button", nil, titleBar)
   pinBtn:SetSize(16, 16)
-  pinBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+  pinBtn:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
 
   pinBtn.tex = pinBtn:CreateTexture(nil, "ARTWORK")
   pinBtn.tex:SetAllPoints()
-  pinBtn.tex:SetTexture("Interface\\Minimap\\Tracking\\WorldMap")
   pinBtn.highlight = pinBtn:CreateTexture(nil, "HIGHLIGHT")
   pinBtn.highlight:SetAllPoints()
   pinBtn.highlight:SetColorTexture(1, 1, 1, 0.2)
@@ -174,11 +178,13 @@ function lib:CreateMiniView(opts)
 
   local function applyPinVisual()
     if pinned then
+      pinBtn.tex:SetTexture("Interface\\Buttons\\LockButton-Locked-Up")
       pinBtn.tex:SetVertexColor(unpack(T.gold))
       grip:Hide()
       titleBar:RegisterForDrag()  -- empty list disables drag
     else
-      pinBtn.tex:SetVertexColor(unpack(T.textDim))
+      pinBtn.tex:SetTexture("Interface\\Buttons\\LockButton-Unlocked-Up")
+      pinBtn.tex:SetVertexColor(1, 1, 1, 1)
       grip:Show()
       titleBar:RegisterForDrag("LeftButton")
     end

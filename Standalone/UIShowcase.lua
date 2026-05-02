@@ -185,16 +185,83 @@ local function createShowcase()
 
   local navHeader = cw:CreateSectionHeader(sidebar, "Pages", -12)
 
-  local yOff = -30
+  -- Nav buttons live inside a ScrollFrame so they don't overflow the sidebar
+  -- when the page count or fontScale-driven button height pushes the stack
+  -- past the visible region. (16 buttons × 32px exceeds the ~448px sidebar
+  -- on a default-size frame even at 1.0x scale.)
+  local NAV_HEADER_H = 30
+  local NAV_ROW_STRIDE = 32
+
+  local navScroll = CreateFrame("ScrollFrame", nil, sidebar)
+  navScroll:SetPoint("TOPLEFT",     sidebar, "TOPLEFT",     0, -NAV_HEADER_H)
+  navScroll:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
+  navScroll:EnableMouseWheel(true)
+
+  local navContent = CreateFrame("Frame", nil, navScroll)
+  navContent:SetWidth(SIDEBAR_WIDTH)
+  navContent:SetHeight(#navDefs * NAV_ROW_STRIDE)
+  navScroll:SetScrollChild(navContent)
+
+  -- Thin themed scroll-indicator track on the right inside edge of the
+  -- sidebar (overlay-only, no mouse interaction so clicks pass through to
+  -- the nav buttons beneath). Mirrors the pattern in createPageFrame.
+  local navTrack = CreateFrame("Frame", nil, sidebar)
+  navTrack:SetWidth(4)
+  navTrack:SetPoint("TOPRIGHT",    navScroll, "TOPRIGHT",    -3, -2)
+  navTrack:SetPoint("BOTTOMRIGHT", navScroll, "BOTTOMRIGHT", -3, 2)
+  navTrack:SetFrameLevel(navScroll:GetFrameLevel() + 5)
+  local navTrackBg = navTrack:CreateTexture(nil, "BACKGROUND")
+  navTrackBg:SetAllPoints()
+  navTrackBg:SetColorTexture(T.border[1], T.border[2], T.border[3], 0.15)
+
+  local navThumb = CreateFrame("Frame", nil, navTrack)
+  navThumb:SetWidth(4)
+  navThumb:SetHeight(20)
+  navThumb:SetPoint("TOP", navTrack, "TOP", 0, 0)
+  local navThumbTex = navThumb:CreateTexture(nil, "ARTWORK")
+  navThumbTex:SetAllPoints()
+  navThumbTex:SetColorTexture(T.brass[1], T.brass[2], T.brass[3], 0.7)
+  navTrack:Hide()
+
+  local function updateNavThumb()
+    local contentH = navContent:GetHeight()
+    local viewH    = navScroll:GetHeight()
+    local range    = math.max(0, contentH - viewH)
+    if range <= 0.5 then navTrack:Hide(); return end
+    navTrack:Show()
+    local trackH = navTrack:GetHeight()
+    local thumbH = math.max(16, trackH * (viewH / contentH))
+    navThumb:SetHeight(thumbH)
+    local cur  = navScroll:GetVerticalScroll()
+    local frac = range > 0 and (cur / range) or 0
+    navThumb:ClearAllPoints()
+    navThumb:SetPoint("TOP", navTrack, "TOP", 0, -frac * (trackH - thumbH))
+  end
+
+  navScroll:SetScript("OnMouseWheel", function(sf, delta)
+    local range = math.max(0, navContent:GetHeight() - sf:GetHeight())
+    if range <= 0 then return end
+    local cur = sf:GetVerticalScroll()
+    sf:SetVerticalScroll(math.max(0, math.min(range, cur - delta * NAV_ROW_STRIDE)))
+    updateNavThumb()
+  end)
+  navScroll:HookScript("OnSizeChanged", updateNavThumb)
+  -- The first measurement is unreliable until WoW has rendered a frame, so
+  -- defer the initial paint by one tick.
+  navScroll:SetScript("OnShow", function() C_Timer.After(0, updateNavThumb) end)
+
+  local yOff = 0
   for _, def in ipairs(navDefs) do
-    local btn = cw:CreateNavButton(sidebar, { label = def.label, icon = def.icon }, function()
+    local btn = cw:CreateNavButton(navContent, { label = def.label, icon = def.icon }, function()
       showPage(def.key)
     end)
-    btn:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, yOff)
-    btn:SetPoint("RIGHT", sidebar, "RIGHT", -1, 0)
+    btn:SetPoint("TOPLEFT", navContent, "TOPLEFT", 0, -yOff)
+    btn:SetPoint("RIGHT",   navContent, "RIGHT",  -1, 0)
     navButtons[def.key] = btn
-    yOff = yOff - 32
+    yOff = yOff + NAV_ROW_STRIDE
   end
+
+  C_Timer.After(0, updateNavThumb)
 
   return f
 end
@@ -1142,6 +1209,11 @@ pages.layout = function(parent)
     else
       fs:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -2)
     end
+    -- Bound the right edge so long sample labels (especially the Large
+    -- fonts) wrap inside the section instead of extending past the page.
+    fs:SetPoint("RIGHT", fontContent, "RIGHT", 0, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(true)
     fs:SetText(fd[2])
     fontFs[i] = fs
     prev = fs
@@ -1615,6 +1687,20 @@ pages.reorder = function(parent)
   local items = { "Mythic Plus", "Raid Night", "Auction House", "Profession Cooldowns",
                   "Daily Reset", "Weekly Reset", "Mailbox", "Bank Run" }
 
+  -- Distinct dim background per row so the user can track which row went
+  -- where after a drag — without colors a pool-recycled row that lands in a
+  -- different slot looks identical to its old position.
+  local ROW_TINTS = {
+    { 0.22, 0.10, 0.12, 0.75 },  -- crimson
+    { 0.22, 0.14, 0.06, 0.75 },  -- amber
+    { 0.18, 0.18, 0.06, 0.75 },  -- ochre
+    { 0.10, 0.20, 0.10, 0.75 },  -- forest
+    { 0.06, 0.16, 0.20, 0.75 },  -- teal
+    { 0.10, 0.12, 0.22, 0.75 },  -- indigo
+    { 0.18, 0.10, 0.22, 0.75 },  -- violet
+    { 0.20, 0.10, 0.16, 0.75 },  -- magenta
+  }
+
   local list = cw:CreateReorderableList(f, {
     items     = items,
     rowHeight = 26,
@@ -1624,6 +1710,16 @@ pages.reorder = function(parent)
       row.label:SetPoint("LEFT", row, "LEFT", 24, 0)
       row.label:SetTextColor(unpack(T.text))
       row.label:SetText(string.format("%d. %s", index, item))
+
+      -- Color the row by its label (the *content*), not its position. That
+      -- way each task keeps its tint as it gets dragged around — making
+      -- before/after order much easier to read.
+      local function hashColor(str)
+        local h = 0
+        for i = 1, #str do h = (h * 31 + str:byte(i)) % 1000003 end
+        return ROW_TINTS[(h % #ROW_TINTS) + 1]
+      end
+      row:SetBackdropColor(unpack(hashColor(item)))
     end,
     onReorder = function(items_, from, to)
       cw:Print("Cogworks", "reordered: " .. from .. " -> " .. to)
@@ -1653,8 +1749,12 @@ pages.wizard = function(parent)
 
   local wizardState = { agreed = false, name = "" }
   local nameRow
-
-  local wizard = cw:CreateWizard(f, {
+  -- Forward-declare so the build/onChange closures inside the table arg below
+  -- can see the upvalue. Otherwise `local wizard = cw:CreateWizard(...)` only
+  -- introduces the local AFTER the table evaluates, and the closures resolve
+  -- `wizard` as a (nil) global.
+  local wizard
+  wizard = cw:CreateWizard(f, {
     onComplete = function()
       cw:Print("Cogworks", "wizard finished — name = " .. (wizardState.name or "<empty>"))
     end,
@@ -1845,7 +1945,10 @@ pages.text = function(parent)
     fs:SetWordWrap(true)
     fs:SetTextColor(unpack(T.text))
     fs:SetText(text)
-    y = y - 22
+    -- Wrapped text takes more vertical space than a single line. Use the
+    -- string's actual height plus a small gap so successive lines never
+    -- overlap at higher fontScale.
+    y = y - math.max(22, fs:GetStringHeight() + 4)
   end
 
   local function addHeader(text)
@@ -1853,9 +1956,11 @@ pages.text = function(parent)
     local h = f:CreateFontString(nil, "OVERLAY")
     h:SetFontObject(cw.Fonts.header)
     h:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12 + y)
+    h:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+    h:SetJustifyH("LEFT")
     h:SetText(text:upper())
     h:SetTextColor(unpack(T.textDim))
-    y = y - 22
+    y = y - math.max(22, h:GetStringHeight() + 4)
   end
 
   addHeader("QualityColorName")
