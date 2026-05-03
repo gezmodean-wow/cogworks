@@ -25,7 +25,7 @@ assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires C
 -- because every consumer ships the same external, the path resolves either way.
 local LIB_LOADER_ADDON = ...
 
-local MAJOR, MINOR = "Cogworks-1.0", 17
+local MAJOR, MINOR = "Cogworks-1.0", 18
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -35,7 +35,7 @@ lib.loaderAddon = lib.loaderAddon or LIB_LOADER_ADDON
 -- Version
 -- ============================================================================
 
-lib.version      = "0.13.0"  -- human-facing semver of the Cogworks suite
+lib.version      = "0.13.1"  -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -2364,7 +2364,13 @@ function lib:CreatePopup(opts)
   local w = opts.width or 360
   local h = opts.height or 200
 
-  local overlay = CreateFrame("Frame", nil, UIParent)
+  -- Overlay needs a global name so ESC-to-close can register via
+  -- UISpecialFrames. Auto-generate one when the caller didn't supply
+  -- opts.overlayName so popups created ad-hoc still dismiss on ESC.
+  lib._popupCounter = (lib._popupCounter or 0) + 1
+  local overlayName = opts.overlayName or ("CogworksPopupOverlay_" .. lib._popupCounter)
+
+  local overlay = CreateFrame("Frame", overlayName, UIParent)
   overlay:SetAllPoints()
   overlay:SetFrameStrata("FULLSCREEN_DIALOG")
   overlay:EnableMouse(true)
@@ -2447,10 +2453,13 @@ function lib:CreatePopup(opts)
     return overlay:IsShown()
   end
 
-  overlay:SetScript("OnKeyDown", function(_, key)
-    if key == "ESCAPE" then overlay:Hide(); overlay:SetPropagateKeyboardInput(false)
-    else overlay:SetPropagateKeyboardInput(true) end
-  end)
+  -- ESC-to-close: UISpecialFrames is Blizzard's supported mechanism. The
+  -- earlier OnKeyDown + SetPropagateKeyboardInput pattern tainted the
+  -- secure ToggleGameMenu path (see ThemedMainFrame.lua for the full
+  -- explanation of why that approach is forbidden).
+  if opts.closeOnEscape ~= false then
+    tinsert(UISpecialFrames, overlayName)
+  end
 
   if opts.buttons then f:SetButtons(opts.buttons) end
   return f

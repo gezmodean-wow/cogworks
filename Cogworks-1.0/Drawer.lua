@@ -12,6 +12,7 @@
 -- Usage:
 --
 --   local drawer = cw:CreateDrawer({
+--     name          = "FlipQueueToolDrawer",  -- required if closeOnEscape
 --     title         = "Tool drawer",
 --     width         = 280,
 --     height        = 480,
@@ -25,6 +26,10 @@
 --     closeOnEscape = true,
 --     saveTo        = ns.db.settings.toolDrawer,
 --   })
+--
+-- ESC support uses Blizzard's UISpecialFrames and requires `opts.name`.
+-- Nameless drawers silently skip the bind. See ThemedMainFrame.lua for why
+-- a custom OnKeyDown is forbidden (COG-26 — secure-path taint).
 --   drawer.content       -- frame for caller widgets
 --   drawer:Show() / Hide() / Toggle()
 --   drawer:SetTitle("New title")
@@ -33,7 +38,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 1
+local MODULE_MINOR = 2
 lib._modules = lib._modules or {}
 if (lib._modules.Drawer or 0) >= MODULE_MINOR then return end
 lib._modules.Drawer = MODULE_MINOR
@@ -132,17 +137,11 @@ function lib:CreateDrawer(opts)
   end
 
   -- ---- ESC handler -----------------------------------------------------
-  if opts.closeOnEscape ~= false then
-    f:EnableKeyboard(true)
-    f:SetPropagateKeyboardInput(true)
-    f:SetScript("OnKeyDown", function(self, key)
-      if key == "ESCAPE" then
-        f:Hide()
-        f:SetPropagateKeyboardInput(false)
-      else
-        f:SetPropagateKeyboardInput(true)
-      end
-    end)
+  -- See ThemedMainFrame.lua for why we use UISpecialFrames instead of
+  -- EnableKeyboard + SetPropagateKeyboardInput. ESC support requires a
+  -- globally named frame; callers without opts.name silently skip the bind.
+  if opts.closeOnEscape ~= false and opts.name then
+    tinsert(UISpecialFrames, opts.name)
   end
 
   -- ---- Anchor / show wiring -------------------------------------------

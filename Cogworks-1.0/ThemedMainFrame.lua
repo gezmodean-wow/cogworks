@@ -18,6 +18,7 @@
 -- Usage:
 --
 --   local frame = cw:CreateThemedMainFrame({
+--     name          = "FlipQueueMainFrame",      -- required if closeOnEscape
 --     title         = "FlipQueue",
 --     versionText   = "v" .. ns.VERSION,
 --     defaultSize   = { w = 750, h = 550 },
@@ -27,6 +28,13 @@
 --     closeOnEscape = true,
 --     sidebar       = { defaultWidth = 130, minWidth = 80, maxWidth = 220 },
 --   })
+--
+-- Note: `closeOnEscape` registers the frame with Blizzard's UISpecialFrames,
+-- which requires a globally named frame — pass `opts.name` if you want ESC
+-- to close. Nameless frames silently skip the bind. Do NOT roll your own
+-- OnKeyDown handler; the EnableKeyboard + SetPropagateKeyboardInput pattern
+-- taints the secure ToggleGameMenu path and locks the player out of the
+-- game menu (root cause of COG-26 in v0.13.0).
 --   frame:SetSummary("23 deals waiting | 4 expiring soon")
 --   frame:AddNavItem({ key = "todo",   label = "To-do",   icon = ICONS.todo })
 --   frame:AddNavItem({ key = "log",    label = "Log",     icon = ICONS.log  })
@@ -41,7 +49,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 1
+local MODULE_MINOR = 2
 lib._modules = lib._modules or {}
 if (lib._modules.ThemedMainFrame or 0) >= MODULE_MINOR then return end
 lib._modules.ThemedMainFrame = MODULE_MINOR
@@ -237,17 +245,14 @@ function lib:CreateThemedMainFrame(opts)
   end)
 
   -- ---- ESC handler ------------------------------------------------------
-  if opts.closeOnEscape ~= false then
-    f:EnableKeyboard(true)
-    f:SetPropagateKeyboardInput(true)
-    f:SetScript("OnKeyDown", function(self, key)
-      if key == "ESCAPE" then
-        f:Hide()
-        f:SetPropagateKeyboardInput(false)
-      else
-        f:SetPropagateKeyboardInput(true)
-      end
-    end)
+  -- Use UISpecialFrames, NOT EnableKeyboard + SetPropagateKeyboardInput.
+  -- The latter pattern taints Blizzard's ToggleGameMenu path: pressing ESC
+  -- with a tainted handler in the chain blocks the secure ClearTarget call
+  -- inside UIParent.lua, which surfaces as ADDON_ACTION_FORBIDDEN and locks
+  -- the player out of the game menu / logout. UISpecialFrames is Blizzard's
+  -- supported escape-to-close mechanism — frame must be globally named.
+  if opts.closeOnEscape ~= false and opts.name then
+    tinsert(UISpecialFrames, opts.name)
   end
 
   -- ---- uiScale subscription --------------------------------------------

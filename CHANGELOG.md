@@ -2,6 +2,25 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.13.1] — 2026-05-03 — Critical: ESC handler taint hotfix (COG-26)
+
+Bumps MINOR from `17` to `18`. Hotfix for a critical taint introduced in v0.13.0 that locked the player out of the game menu after they opened (and closed) any Cogworks-themed window.
+
+### Player summary
+
+If you've used Tally (or any cog built on Cogworks v0.13.0) you may have hit a bug where pressing Escape stopped opening the game menu — and you couldn't logout or quit the game without /reload. This release fixes that. Update Cogworks (and your cogs once they re-release with this version pinned) and the game menu will work normally again.
+
+### Fixed
+
+- **`CreateThemedMainFrame`** (`ThemedMainFrame.lua`, MODULE_MINOR 1 → 2) — replaced the ESC-to-close handler with `UISpecialFrames` registration. The previous `EnableKeyboard` + `OnKeyDown` + `SetPropagateKeyboardInput(false)` pattern tainted the secure execution path that `ToggleGameMenu` walks to call `ClearTarget` (UIParent.lua:2389), so every ESC press after the cog's frame had been opened raised `ADDON_ACTION_FORBIDDEN AddOn 'cogworks' tried to call the protected function 'ClearTarget'` and silently swallowed the keypress. Players reported full game-menu lockout (no logout, no quit) until /reload. The fix uses Blizzard's supported escape-to-close mechanism, which requires a globally named frame — callers already pass `opts.name`, so no API change. (COG-26)
+- **`CreateDrawer`** (`Drawer.lua`, MODULE_MINOR 1 → 2) — same fix, preventive. ESC support now requires `opts.name`; nameless drawers silently skip the bind rather than ship the broken handler.
+- **`CreatePopup` / `ShowConfirmDialog`** (`Cogworks-1.0.lua`) — same fix. The popup overlay now auto-generates a unique global name (`CogworksPopupOverlay_N`) and registers it with `UISpecialFrames` so ESC actually closes the popup (the previous `OnKeyDown` was dead code anyway because `EnableKeyboard` was never called on the overlay).
+
+### Notes
+
+- **All consumer cogs must bump their `.pkgmeta` Cogworks external to v0.13.1 and re-release.** Until they do, vendored copies of the buggy `ThemedMainFrame.lua` / `Drawer.lua` will still load when the cog is installed without the standalone Cogworks addon. The per-module guard (MODULE_MINOR 2) ensures that if *any* loaded cog ships v0.13.1, the fixed methods supersede older copies — but the safest posture is for every cog to ship the bump.
+- Standalone Cogworks users running v0.13.0 should update to v0.13.1 immediately.
+
 ## [0.13.0] — 2026-05-02 — Debug toolkit, ThemedMainFrame, Drawer, Slash, Toast
 
 Bumps MINOR from `16` to `17`. Resolves cogworks #14 (ThemedMainFrame), #15 (Drawer), #16 (Slash registry), #17 (Toast). Adds the per-cog **debug toolkit** that consumer cogs can adopt out of the box (logger + inspectors + profiler + console widget + state-dump dialog + lib-side debug bridge). Standalone Cogworks now ships its own gear-bordered minimap button.

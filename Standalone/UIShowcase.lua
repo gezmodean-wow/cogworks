@@ -2391,6 +2391,7 @@ pages.mainframe = function(parent)
   cw:CreateButton(f, "Open ThemedMainFrame demo", 240, 28, function()
     if not f._demo then
       local demo = cw:CreateThemedMainFrame({
+        name          = "CogworksShowcaseDemoFrame",
         title         = "ThemedMainFrame demo",
         versionText   = "v" .. cw.version,
         defaultSize   = { w = 620, h = 420 },
@@ -2446,6 +2447,7 @@ pages.drawer = function(parent)
   cw:CreateButton(f, "Toggle drawer", 200, 28, function()
     if not f._drawer then
       f._drawer = cw:CreateDrawer({
+        name        = "CogworksShowcaseSampleDrawer",
         title       = "Sample drawer",
         width       = 260,
         height      = 320,
