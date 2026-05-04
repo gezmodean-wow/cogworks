@@ -1,6 +1,26 @@
-# Session handoff — 2026-05-02
+# Session handoff — 2026-05-03
 
 Snapshot for the next agent picking up Cogworks work. Read this first.
+
+## Status flag (2026-05-03 EOD)
+
+**Cogworks dev is on hold until [flipqueue#143](https://github.com/gezmodean-wow/flipqueue/issues/143) closes.** That umbrella tracks FlipQueue's adoption of the v0.13 primitive set and was the natural pause point. User directive: don't pick up #2 (cross-realm), #12 (minimap-rim cluster), or #23 (chunked-task widget) during this window — only FQ-discovered gaps should drive new Cogworks changes. Low-friction cleanup is still fair game (sibling TOC pickups, manual LDB/LDBIcon refreshes).
+
+FQ adoption itself is being driven by the FlipQueue agent, not from this repo.
+
+## Since last handoff (2026-05-03)
+
+Three commits landed on `main`, all originating from issues filed by sibling-cog agents during their adoption work:
+
+| Commit | Issue | Note |
+|---|---|---|
+| `c2e196d` | #26 (closed) | ESC handler tainted `ToggleGameMenu` — replaced manual `OnKeyDown` with `UISpecialFrames` in v0.13 primitives (ThemedMainFrame / Drawer / Popup). Fixes lockout reported during FQ adoption. |
+| `8d3b979` | #27 (closed) | Added reusable `verify-package.yml` workflow — gates every cog's release on a real packager build + zip-contents assertion. Born from tally alpha6's empty-`Libs/Cogworks-1.0` zip. |
+| `d305d02` | #29 (closed) | Backslash-separator normalization in the verify script. Tally alpha8 was falsely blocked on Linux because its TOC used `Libs\LibStub\LibStub.lua`. Three fixes: TOC walk, XML descend, `<Script>`/`<Include>` refs inside XMLs. |
+
+New issue this session: **#28 (ItemBase)** — bundled name→itemID + metadata cache for cross-cog lookup. Lifted from `flipqueue#145` per maintainer direction; touches FQ + Tally + Maxcraft. Probably v0.14.x. Not yet scoped or scheduled.
+
+No tag cut. No release pipeline ran. **Tally's alpha8 retag is still outstanding** on the Tally side — they should be unblocked now that they can re-tag against the patched `verify-package.yml@main`.
 
 ## Where we are
 
@@ -57,6 +77,7 @@ Pre-req: bump FlipQueue's `.pkgmeta` `Libs/Cogworks-1.0` external `tag:` from `v
 | 2 | Cross-realm key extraction & hardening | Partial. `Realms.lua` has normalization + matching; still pending: connected-realm graph, TSM key parser, server-time helpers. |
 | 12 | Minimap-rim cluster widget | Design-question stub. Possibly already covered by `CreateGearAssembly` — needs body re-read to confirm. |
 | 23 | CreateProgressBar / chunked-task widget | `CreateProgressBar` exists; the **chunked-iterator + auto-progress wrapper** is the new ask. Useful for Tally net-worth recompute, Maxcraft recipe scan, FQ AH parse. Probably v0.14. |
+| 28 | **ItemBase** — bundled name→itemID + metadata cache | New (filed 2026-05-03). Cross-cog ask lifted from `flipqueue#145`. Lazy-load ~3MB Lua data file generated from Blizzard Game Data API. API surface drafted in the issue body; sibling-cog maintainers should comment with their resolution patterns before locking v1. Probably v0.14.x. |
 
 ### 3. Sibling-cog TOC pickups
 
@@ -70,10 +91,12 @@ Per the v0.12 changelog note: every consumer cog needs `## SavedVariables: Cogwo
 
 ## Project state at handoff
 
-- Branch: `main`, clean working tree, fully pushed
-- Last commit: `17240a7 fix(pkgmeta): vendor LDB + LDBIcon directly, drop wowace SVN externals`
-- Last release: `v0.13.0` (success, live on CF + Wago)
-- All v0.12 + v0.13-resolved issues commented + closed (#14, #15, #16, #17, #18, #19, #20, #21, #22, #24)
+- Branch: `main`, fully pushed; only this `docs/SESSION_HANDOFF.md` is dirty
+- Last commit: `d305d02 fix(COG-29): normalize backslash separators in TOC/XML path checks`
+- Last release: `v0.13.0` (still current — no tag cut today; only CI infra and an ESC-handler patch since)
+- Closed today: #26, #27, #29
+- Open: #1, #2, #12, #23, #28 (ItemBase, new)
+- All v0.12 + v0.13-resolved issues commented + closed previously (#14, #15, #16, #17, #18, #19, #20, #21, #22, #24)
 
 ## Operational reminders
 
