@@ -9,7 +9,16 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    # Build-only run + content assertions. Blocks release on a broken zip
+    # (missing externals, dangling TOC/XML refs, suspiciously small archive).
+    # See COG-27 — tally v0.1.0-alpha6 shipped with Libs/Cogworks-1.0
+    # silently empty; the verify gate catches that exact failure mode.
+    uses: ./.github/workflows/verify-package.yml
+    secrets: inherit
+
   release:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

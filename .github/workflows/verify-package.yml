@@ -1,0 +1,236 @@
+name: Verify package
+
+# Reusable workflow that runs the BigWigsMods packager in build-only mode
+# (-d skips upload), then asserts the produced .release/<addon>/ tree is
+# self-consistent. Catches the failure mode that surfaced in tally
+# v0.1.0-alpha6: a git external silently produced an empty Libs/Cogworks-1.0
+# directory, the zip uploaded with Cogworks-1.0.xml missing, players hit the
+# "couldn't open" error before CI did.
+#
+# Consumed by every cog's release.yml as a job that release: needs:, so a
+# broken zip blocks the upload step. Also runs on PR for fast feedback.
+#
+# Reference (consumer cog release.yml):
+#   jobs:
+#     verify:
+#       uses: gezmodean-wow/cogworks/.github/workflows/verify-package.yml@main
+#       secrets: inherit
+#     release:
+#       needs: verify
+#       # ... existing steps ...
+#
+# Cogworks itself uses the local ref `./.github/workflows/verify-package.yml`
+# rather than the github.com path because it's the same repo.
+
+on:
+  workflow_call:
+    inputs:
+      packager-args:
+        description: BigWigs packager args. Defaults to -d (skip upload).
+        required: false
+        type: string
+        default: "-d"
+  pull_request:
+    paths:
+      - "**.toc"
+      - "**.xml"
+      - "**.lua"
+      - ".pkgmeta"
+      - ".github/workflows/verify-package.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build (no upload)
+        uses: BigWigsMods/packager@v2
+        with:
+          args: ${{ inputs.packager-args || '-d' }}
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # ---- Resolve addon name ----------------------------------------
+          # `package-as:` from .pkgmeta is authoritative; fall back to the
+          # repository directory name if the pkgmeta is unusual.
+          if [ -f .pkgmeta ]; then
+            ADDON=$(awk '/^package-as:/ { print $2; exit }' .pkgmeta)
+          fi
+          ADDON="${ADDON:-$(basename "$GITHUB_REPOSITORY")}"
+          RELEASE_DIR=".release/$ADDON"
+
+          echo "::notice::Verifying package: $ADDON"
+          echo "Release dir: $RELEASE_DIR"
+
+          if [ ! -d "$RELEASE_DIR" ]; then
+            echo "::error::Built release directory missing: $RELEASE_DIR"
+            echo "::error::Likely cause: BigWigs packager failed to produce output. Check the previous step."
+            exit 1
+          fi
+
+          ERRORS=0
+
+          # ---- Helpers ---------------------------------------------------
+          fail() {
+            echo "::error::$*"
+            ERRORS=$((ERRORS + 1))
+          }
+
+          # Normalize a path with .. / . components against RELEASE_DIR.
+          normalize() {
+            local input="$1"
+            (cd "$RELEASE_DIR" && realpath -m --relative-to="$PWD" "$input" 2>/dev/null) || echo "$input"
+          }
+
+          # Visited XMLs (avoid re-walking on cycles or shared includes).
+          declare -A VISITED_XML
+
+          walk_xml() {
+            local xml_rel="$1"
+            local from="$2"
+            if [ "${VISITED_XML[$xml_rel]+x}" ]; then
+              return
+            fi
+            VISITED_XML[$xml_rel]=1
+            local xml_full="$RELEASE_DIR/$xml_rel"
+            if [ ! -f "$xml_full" ]; then
+              fail "Missing XML referenced by $from: $xml_rel"
+              return
+            fi
+            local xml_dir
+            xml_dir=$(dirname "$xml_rel")
+            # Extract file="..." from <Script> and <Include> tags. Tolerant of
+            # whitespace and attribute order.
+            grep -hoE '<(Script|Include)\b[^>]*\bfile="[^"]+"' "$xml_full" 2>/dev/null \
+              | grep -oE 'file="[^"]+"' \
+              | sed -E 's/^file="(.*)"$/\1/' \
+              | while IFS= read -r ref; do
+                  # Resolve relative to xml's directory.
+                  local resolved
+                  if [ "$xml_dir" = "." ]; then
+                    resolved="$ref"
+                  else
+                    resolved="$xml_dir/$ref"
+                  fi
+                  resolved=$(normalize "$resolved")
+                  if [ ! -f "$RELEASE_DIR/$resolved" ]; then
+                    echo "::error::Missing file referenced by $xml_rel: $ref (resolved: $resolved)"
+                    exit 1
+                  fi
+                  if [[ "$ref" =~ \.xml$ ]]; then
+                    walk_xml "$resolved" "$xml_rel"
+                  fi
+                done
+            # The pipe runs in subshell; use exit code to propagate failure.
+            local pipe_status=$?
+            if [ "$pipe_status" -ne 0 ]; then
+              ERRORS=$((ERRORS + 1))
+            fi
+          }
+
+          # ---- Walk every TOC in the release tree -----------------------
+          shopt -s nullglob
+          TOCS=( "$RELEASE_DIR"/*.toc )
+          shopt -u nullglob
+
+          if [ "${#TOCS[@]}" -eq 0 ]; then
+            fail "No .toc file found in $RELEASE_DIR"
+          fi
+
+          for toc in "${TOCS[@]}"; do
+            echo "Walking TOC: $toc"
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%$'\r'}"
+              # Trim leading/trailing whitespace.
+              line="${line#"${line%%[![:space:]]*}"}"
+              line="${line%"${line##*[![:space:]]}"}"
+              [ -z "$line" ] && continue
+              [[ "$line" =~ ^# ]] && continue
+              # File reference?
+              if [[ "$line" =~ \.(lua|xml)$ ]]; then
+                ref_full="$RELEASE_DIR/$line"
+                if [ ! -f "$ref_full" ]; then
+                  fail "Missing file referenced by $(basename "$toc"): $line"
+                  continue
+                fi
+                if [[ "$line" =~ \.xml$ ]]; then
+                  walk_xml "$line" "$(basename "$toc")"
+                fi
+              fi
+            done < "$toc"
+          done
+
+          # ---- Externals must be non-empty ------------------------------
+          # The alpha6 incident: git external silently produced an empty
+          # Libs/Cogworks-1.0/. The TOC walk above already catches missing
+          # files referenced from the addon TOC, but this is belt-and-
+          # suspenders for externals that might not be TOC-referenced (e.g.
+          # libs only loaded by a sibling external's TOC).
+          if [ -f .pkgmeta ]; then
+            EXTERNALS=$(awk '
+              /^externals:/  { in_ext=1; next }
+              /^[^[:space:]#]/ && !/^externals:/ { in_ext=0 }
+              in_ext && /^[[:space:]]+[^[:space:]#]/ && /:$/ {
+                gsub(/^[[:space:]]+/, "")
+                gsub(/:.*$/, "")
+                print
+              }
+            ' .pkgmeta)
+
+            if [ -n "$EXTERNALS" ]; then
+              while IFS= read -r ext; do
+                [ -z "$ext" ] && continue
+                ext_full="$RELEASE_DIR/$ext"
+                if [ ! -d "$ext_full" ]; then
+                  fail "External directory missing in built tree: $ext"
+                  continue
+                fi
+                # An external directory with no regular files inside is the
+                # alpha6 failure mode — git clone returned cleanly but with
+                # nothing useful.
+                file_count=$(find "$ext_full" -type f | wc -l)
+                if [ "$file_count" -eq 0 ]; then
+                  fail "External directory empty (clone produced no files?): $ext"
+                  continue
+                fi
+                echo "External OK: $ext ($file_count files)"
+              done <<< "$EXTERNALS"
+            fi
+          fi
+
+          # ---- Built zip exists and isn't trivially small ---------------
+          shopt -s nullglob
+          ZIPS=( .release/*.zip )
+          shopt -u nullglob
+
+          if [ "${#ZIPS[@]}" -eq 0 ]; then
+            fail "No release zip produced in .release/"
+          else
+            for zip in "${ZIPS[@]}"; do
+              size=$(stat -c%s "$zip")
+              # 50KB minimum — any real cog ships well above this. Catches
+              # zips that contain only the TOC or are otherwise truncated.
+              if [ "$size" -lt 51200 ]; then
+                fail "Release zip suspiciously small (<50KB): $zip ($size bytes)"
+              else
+                echo "Zip OK: $zip ($size bytes)"
+              fi
+            done
+          fi
+
+          # ---- Final verdict --------------------------------------------
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::Verify failed with $ERRORS error(s) — release blocked."
+            exit 1
+          fi
+
+          echo "::notice::Verify passed for $ADDON."
