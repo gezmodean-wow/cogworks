@@ -97,6 +97,10 @@ jobs:
           walk_xml() {
             local xml_rel="$1"
             local from="$2"
+            # Same backslash normalization as the TOC walk — XML <Script>
+            # and <Include> file= attributes can also be authored with
+            # Windows-style separators.
+            xml_rel="${xml_rel//\\/\/}"
             if [ "${VISITED_XML[$xml_rel]+x}" ]; then
               return
             fi
@@ -114,6 +118,8 @@ jobs:
               | grep -oE 'file="[^"]+"' \
               | sed -E 's/^file="(.*)"$/\1/' \
               | while IFS= read -r ref; do
+                  # Normalize backslashes before path resolution.
+                  ref="${ref//\\/\/}"
                   # Resolve relative to xml's directory.
                   local resolved
                   if [ "$xml_dir" = "." ]; then
@@ -157,6 +163,12 @@ jobs:
               [[ "$line" =~ ^# ]] && continue
               # File reference?
               if [[ "$line" =~ \.(lua|xml)$ ]]; then
+                # Normalize Windows-style backslashes to forward slashes —
+                # WoW accepts both in TOC paths on every platform, and many
+                # cogs were authored on Windows so their TOCs use \. The
+                # filesystem we test against here is Linux, where \ is a
+                # literal character. Translate so the [ -f ] check works.
+                line="${line//\\/\/}"
                 ref_full="$RELEASE_DIR/$line"
                 if [ ! -f "$ref_full" ]; then
                   fail "Missing file referenced by $(basename "$toc"): $line"
