@@ -2,6 +2,23 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.13.2] — 2026-05-05 — Critical: StaticPopupDialogs taint hotfix (COG-30)
+
+Bumps MINOR from `18` to `19`. Hotfix for a long-latent taint introduced in v0.12.0 that blocked the player from right-clicking certain bag items (most visibly knowledge tomes and consumables that show a confirmation prompt on use).
+
+### Player summary
+
+If you've had bag items that quietly refused to be right-clicked — knowledge tomes, profession consumables, or anything that pops a "use this?" confirmation — this update fixes that. The same items now use normally. No settings change required; just update Cogworks (and your cogs once they re-release pinned to this version).
+
+### Fixed
+
+- **`Scaling.lua`** (MODULE_MINOR `1 → 2`) — removed the `StaticPopupDialogs = StaticPopupDialogs or {}` defensive rebind at the top of the profile-popup registration block. That rebind taints the `StaticPopupDialogs` global from insecure context; from then on, any protected Blizzard call that consults the popup table inherits taint. Most user-visible: `UseContainerItem` on items that pop a confirmation StaticPopup (knowledge tomes, certain consumables). The right-click silently fails with `ADDON_ACTION_FORBIDDEN AddOn 'cogworks' tried to call the protected function 'UNKNOWN()'` from `ContainerFrameItemButton_OnClick`. Items that don't trigger a confirmation popup (gear, tradegoods) were unaffected — that asymmetry was the diagnostic signal. The per-key assignment pattern below the deleted line (`StaticPopupDialogs["COGWORKS_NEW_PROFILE"] = ...`) is the safe, standard pattern and stays. (COG-30)
+
+### Notes
+
+- **All consumer cogs must bump their `.pkgmeta` Cogworks external to v0.13.2 and re-release.** The taint was in `Scaling.lua`, so any cog vendoring v0.12.0–v0.13.1 still ships the bug until they re-pin. The per-module guard (MODULE_MINOR 2) ensures that if *any* loaded cog ships v0.13.2, the fixed file supersedes older copies — but every cog should still bump for safety.
+- Standalone Cogworks users running v0.12.0–v0.13.1 should update immediately.
+
 ## [0.13.1] — 2026-05-03 — Critical: ESC handler taint hotfix (COG-26)
 
 Bumps MINOR from `17` to `18`. Hotfix for a critical taint introduced in v0.13.0 that locked the player out of the game menu after they opened (and closed) any Cogworks-themed window.

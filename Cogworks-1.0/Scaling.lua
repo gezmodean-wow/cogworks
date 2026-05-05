@@ -19,7 +19,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 1
+local MODULE_MINOR = 2
 lib._modules = lib._modules or {}
 if (lib._modules.Scaling or 0) >= MODULE_MINOR then return end
 lib._modules.Scaling = MODULE_MINOR
@@ -143,9 +143,12 @@ end
 -- ============================================================================
 -- Profile-action popups
 -- ============================================================================
--- StaticPopupDialogs reused across blocks.
+-- StaticPopupDialogs reused across blocks. Per-key assignment is the safe
+-- pattern; rebinding the global itself (StaticPopupDialogs = StaticPopupDialogs
+-- or {}) taints the table from insecure context and causes ADDON_ACTION_FORBIDDEN
+-- on any protected call that consults the popup table — most visibly
+-- UseContainerItem on knowledge tomes / consumables (COG-30 / flipqueue#156).
 
-StaticPopupDialogs = StaticPopupDialogs or {}
 StaticPopupDialogs["COGWORKS_NEW_PROFILE"] = StaticPopupDialogs["COGWORKS_NEW_PROFILE"] or {
   text         = "Name for the new profile:",
   button1      = "Create",
