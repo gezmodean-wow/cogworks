@@ -11,18 +11,50 @@ The two audiences this serves:
 
 Sessions check the top entry below against their `CLAUDE.md` "Last acknowledged" code for this runbook. If newer, prefix the first response with `Standards updated:` plus a one-line summary per new entry, then update the cog's acknowledged code as part of the session's commit.
 
+- **2026-05-06a** — Branch naming convention now requires issue encoding when work is issue-linked. Format: `<type>/<COG-N>-<slug>` (e.g. `fix/FQ-147-bag-taint`). Chore work without an issue keeps `<type>/<slug>`. Scribe parses branch names via `^[a-z]+\/([A-Z]+-\d+)-` to track in-progress state on linked issue threads.
 - **2026-05-05a** — Initial codification. GitHub Flow + tagged releases; PR discipline (always open even solo, draft while WIP, squash-merge); release flow (soak window, pre-tag check, hotfix branches off the tag); channel semantics (alpha/beta/release label exposure not maturity, promotion by re-tagging the same commit, `-alpha2` only on player feedback); F1–F8 pre-tag checklist (mechanical via `scripts/pre-tag-check.sh`, F8 in-game smoke test is human-only); severity → channel mapping.
 
 ## Branch model — GitHub Flow + tagged releases
 
 - `main` (or `master` for flipqueue) is **always shippable**, but never auto-shipped. Tags are the release artifact; the `human_gate_before_release` rule still gates upload to CurseForge / Wago.
-- Work happens on **short-lived branches**, named by intent:
-  - `feat/<slug>` — new functionality
-  - `fix/<slug>` — bug fix
-  - `chore/<slug>` — refactor, dep / pin bump, CI, packaging, doc-only
-  - `docs/<slug>` — runbook / readme only
+- Work happens on **short-lived branches**, named by intent (see naming rules below).
 - **No `develop` branch.** Single trunk plus topic branches.
 - **No long-running release branches.** A release is a tag at a commit on main, not a branch.
+
+## Branch naming
+
+**Issue-linked branches** (the common case — any feature, bug fix, or chore tied to a tracked ticket):
+
+```
+<type>/<COG-N>-<slug>
+```
+
+Where:
+- `<type>` is one of `feat | fix | chore | docs`
+- `<COG-N>` is the cog-internal issue ID — `FQ-147` (flipqueue), `TLY-49` (tally), `TMP-12` (tempo), `MXC-3` (maxcraft), `COG-30` (cogworks). The number matches the GitHub issue number 1:1.
+- `<slug>` is a short kebab-case description
+
+Examples:
+- `fix/FQ-147-bag-taint`
+- `feat/TLY-49-blob-storage`
+- `chore/COG-30-static-popup-rebind`
+- `docs/TMP-12-readme-cleanup`
+
+**Issue-less branches** (chore work with no ticket — CI tweaks, tooling, suite-wide bootstraps):
+
+```
+<type>/<slug>
+```
+
+Examples: `chore/adopt-suite-standards`, `chore/bootstrap-suite-standards`, `chore/pin-cogworks-workflow-v0.13.2`.
+
+**Why the issue-encoding matters:** scribe parses branch names to set `in_progress` status on the linked issue's Discord thread when a branch with `<COG-N>` is created, and reverts only on issue close (not on branch delete — branches get rebased / squashed away constantly during work). The regex scribe uses: `^[a-z]+\/([A-Z]+-\d+)-`. Branches without that prefix are treated as not-issue-linked and skipped.
+
+**Type prefixes:**
+- `feat/` — new functionality
+- `fix/` — bug fix
+- `chore/` — refactor, dep / pin bump, CI, packaging
+- `docs/` — runbook / readme only
 
 ## PR discipline
 
