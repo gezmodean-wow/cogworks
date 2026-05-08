@@ -5,6 +5,7 @@
 # Adding a new sync target: drop the file under shared/<path>, add the
 # path here, bump shared/VERSION. See cogworks/runbooks/standards-sync.md.
 
+.gitattributes
 .github/pull_request_template.md
 .github/ISSUE_TEMPLATE/bug.md
 .github/ISSUE_TEMPLATE/task.md
