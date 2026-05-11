@@ -2,6 +2,10 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## Unreleased
+
+- fix(COG-56): CreateDebugConsole crashed with "attempt to call a nil value" because TabPanel's eager initial activation fired tab `build` closures that reference `f._buildActions` / `_buildInspectors` / `_buildProfile` / `_buildLog` before those methods are defined further down in `CreateDebugConsole`. TabPanel gains an additive `lazy = true` opt (MODULE_MINOR `15 → 16`) that suppresses the auto-activate; Debug.lua passes it and now calls `panel:SetActiveTab(...)` once every builder is wired (MODULE_MINOR `1 → 2`). Bumps lib MINOR `19 → 20`.
+
 ## [0.13.2] — 2026-05-05 — Critical: StaticPopupDialogs taint hotfix (COG-30)
 
 Bumps MINOR from `18` to `19`. Hotfix for a long-latent taint introduced in v0.12.0 that blocked the player from right-clicking certain bag items (most visibly knowledge tomes and consumables that show a confirmation prompt on use).

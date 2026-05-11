@@ -30,7 +30,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 1
+local MODULE_MINOR = 2
 lib._modules = lib._modules or {}
 if (lib._modules.Debug or 0) >= MODULE_MINOR then return end
 lib._modules.Debug = MODULE_MINOR
@@ -513,7 +513,13 @@ function lib:CreateDebugConsole(opts)
   tabHost:SetPoint("TOPLEFT",     statusRow, "BOTTOMLEFT",  0, -2)
   tabHost:SetPoint("BOTTOMRIGHT", f,         "BOTTOMRIGHT", -4, 14)
 
+  -- The tab build closures reference f._buildActions / f._buildInspectors /
+  -- f._buildProfile / f._buildLog — all defined further down in this function.
+  -- TabPanel's eager initial activation would fire those closures before the
+  -- methods exist, so we pass lazy=true here and explicitly activate the
+  -- starting tab at the bottom of CreateDebugConsole once everything is wired.
   local panel = self:CreateTabPanel(tabHost, {
+    lazy = true,
     tabs = {
       { key = "actions",    label = "Actions",    build = function(p) f._buildActions(p)    end },
       { key = "inspectors", label = "Inspectors", build = function(p) f._buildInspectors(p) end },
@@ -835,6 +841,10 @@ function lib:CreateDebugConsole(opts)
     if f._actionsTab and f._actionsTab._rebuild then f._actionsTab._rebuild() end
     f._refreshStatus()
   end
+
+  -- Activate the starting tab now that every f._build* method is defined.
+  -- Honours opts.initialTab if the caller picked a specific landing tab.
+  panel:SetActiveTab(opts.initialTab or "actions")
 
   return f
 end
