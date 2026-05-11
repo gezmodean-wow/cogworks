@@ -104,11 +104,18 @@ GAMEDATA_HOST_FMT = "https://{region}.api.blizzard.com"
 ITEM_NAMESPACE_FMT = "static-{region}"
 ITEM_PATH_FMT = "/data/wow/item/{item_id}"
 
-# A WoW build/patch we tag the file with. Pulled from /data/wow/keystone-affix
-# or similar version-bearing endpoint at runtime; falls back to "unknown" so
-# the generator always produces a well-formed file even if Blizzard's version
-# manifest is down.
+# A WoW build/patch we tag the file with. We extract this from the resolved
+# namespace Blizzard returns on the first 200 response — the API takes our
+# `namespace=static-us` query and resolves it to a build-specific namespace
+# like `static-12.0.5_60000-us` in the response's `_links.self.href`. Falls
+# back to "unknown" so the generator always produces a well-formed file even
+# if every item ID 404s.
 VERSION_FALLBACK = "unknown"
+
+# Pattern for the resolved namespace embedded in `_links.self.href`:
+#   .../data/wow/item/6948?namespace=static-12.0.5_60000-us&locale=enUS
+# captures (1) the dotted patch and (2) the build number.
+_NAMESPACE_RE = re.compile(r"namespace=static-(\d+(?:\.\d+)*)_(\d+)-[a-z]+")
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +136,9 @@ class BlizzardClient:
         self._last_call = 0.0
         self._token: str | None = None
         self._token_expires_at: float = 0.0
+        # Captured from the first 200 response's resolved namespace. Stays None
+        # until we get a real item back; main() falls back to VERSION_FALLBACK.
+        self.resolved_version: str | None = None
 
     # -- token ----------------------------------------------------------------
 
@@ -178,7 +188,13 @@ class BlizzardClient:
             )
             try:
                 with urllib.request.urlopen(req, timeout=30) as resp:
-                    return json.load(resp)
+                    payload = json.load(resp)
+                if self.resolved_version is None:
+                    href = ((payload.get("_links") or {}).get("self") or {}).get("href", "")
+                    m = _NAMESPACE_RE.search(href)
+                    if m:
+                        self.resolved_version = f"{m.group(1)}.{m.group(2)}"
+                return payload
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
                     return None
@@ -371,7 +387,7 @@ def main(argv: list[str]) -> int:
             print(f"... scanned {seen} ids, kept {kept}", file=sys.stderr)
 
     table = {
-        "version": VERSION_FALLBACK,  # TODO(COG-28): pull a real WoW patch.build from /data/wow/...
+        "version": client.resolved_version or VERSION_FALLBACK,
         "generatedAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "locale": args.locale,
         "items": items,
