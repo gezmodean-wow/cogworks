@@ -32,4 +32,10 @@
     <Script file="Slash.lua" />
     <Script file="Toast.lua" />
 
+    <!-- ItemBase: data file before loader. The data file assigns
+         CogworksItemBaseData_<locale> to a global; ItemBase.lua picks it up
+         lazily on first ResolveName/GetItem/Load call. -->
+    <Script file="Data\ItemBase-Generated-enUS.lua" />
+    <Script file="ItemBase.lua" />
+
 </Ui>
