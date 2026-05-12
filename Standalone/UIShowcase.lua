@@ -172,6 +172,7 @@ local function createShowcase()
     { key = "mini",     label = "MiniView",    icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
     { key = "text",     label = "Text",        icon = "Interface\\Buttons\\UI-MicroButton-Achievement-Up" },
     { key = "wizard",   label = "Wizard",      icon = "Interface\\Buttons\\UI-MicroButton-Mounts-Up" },
+    { key = "stepper",  label = "Stepper",     icon = "Interface\\Buttons\\UI-MicroButton-Quest-Up" },
     { key = "tree",     label = "Tree",        icon = "Interface\\Buttons\\UI-MicroButton-LFG-Up" },
     { key = "reorder",  label = "Reorderable", icon = "Interface\\Buttons\\UI-MicroButton-Encounter-Journal-Up" },
     { key = "tables",   label = "Tables",      icon = "Interface\\Buttons\\UI-MicroButton-Questlog-Up" },
@@ -1875,6 +1876,124 @@ pages.wizard = function(parent)
   })
   wizard:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
   wizard:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Stepper (CreateStepper demo)
+-- ============================================================================
+
+pages.stepper = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.normal)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.text))
+  intro:SetText("CreateStepper walks a queue of items one at a time with caller-defined "
+              .. "footer actions. Distinct from Wizard (fixed N-step linear flow). The "
+              .. "queue can grow mid-traversal via Push; Skip / Back / Cancel are built "
+              .. "in; cancelling returns the intact remaining queue.")
+
+  -- Demo items: pretend list of "failed posts" to repost.
+  local items = {
+    { name = "Linen Cloth",        count = 200 },
+    { name = "Heavy Junkbox",      count = 10  },
+    { name = "Mageweave Bandage",  count = 60  },
+  }
+
+  -- Demo widgets that the renderItem closure repaints each visit.
+  local itemFs, ctxFs
+
+  -- Forward-declare so closures can reach it.
+  local stepper
+
+  -- "Push more items" button below the stepper frame so we can demonstrate
+  -- mid-traversal queue growth.
+  local pushBtn, restartBtn
+
+  local stepperBox = CreateFrame("Frame", nil, f)
+  stepperBox:SetPoint("TOPLEFT",     intro, "BOTTOMLEFT",   0, -16)
+  stepperBox:SetPoint("BOTTOMRIGHT", f,     "BOTTOMRIGHT", -8, 40)
+
+  local function buildStepper()
+    stepper = cw:CreateStepper(stepperBox, {
+      title       = "Repost failed listings",
+      items       = items,
+      showProgress = true,
+      showBack    = true,
+      actions     = {
+        { key = "skip",   label = "Skip" },
+        { key = "repost", label = "Repost", style = "primary" },
+      },
+      renderItem = function(content, item, ctx)
+        if not itemFs then
+          itemFs = content:CreateFontString(nil, "OVERLAY")
+          itemFs:SetFontObject(cw.Fonts.header)
+          itemFs:SetPoint("TOPLEFT", content, "TOPLEFT", 16, -16)
+          itemFs:SetPoint("RIGHT",   content, "RIGHT",  -16, 0)
+          itemFs:SetJustifyH("LEFT")
+          itemFs:SetWordWrap(true)
+          itemFs:SetTextColor(unpack(T.gold))
+
+          ctxFs = content:CreateFontString(nil, "OVERLAY")
+          ctxFs:SetFontObject(cw.Fonts.normal)
+          ctxFs:SetPoint("TOPLEFT", itemFs, "BOTTOMLEFT", 0, -12)
+          ctxFs:SetPoint("RIGHT",   content, "RIGHT",   -16, 0)
+          ctxFs:SetJustifyH("LEFT")
+          ctxFs:SetWordWrap(true)
+          ctxFs:SetTextColor(unpack(T.text))
+        end
+
+        if item == nil then
+          itemFs:SetText("Queue empty")
+          ctxFs:SetText("Click \"Push 2 more\" below to add items mid-traversal, "
+                     .. "or Restart to begin a new run.")
+          return
+        end
+
+        itemFs:SetText(item.name .. "  ×" .. item.count)
+        local last = ctx.history[#ctx.history]
+        local lastTxt = last and ("last: " .. last.item.name .. " → " .. last.action)
+                              or "no prior items"
+        ctxFs:SetText("Index " .. ctx.index .. " of " .. ctx.total .. "\n" .. lastTxt)
+      end,
+      onAction = function(actionKey, item)
+        cw:Print("Cogworks", "stepper: " .. actionKey .. " on " .. item.name)
+      end,
+      onCancel = function(remaining)
+        cw:Print("Cogworks", "stepper cancelled; " .. #remaining .. " item(s) remained")
+      end,
+      onComplete = function()
+        cw:Print("Cogworks", "stepper complete")
+      end,
+    })
+    stepper:SetAllPoints()
+  end
+  buildStepper()
+
+  pushBtn = cw:CreateButton(f, "Push 2 more", 120, 24, function()
+    if not stepper then return end
+    stepper:Push({ name = "Runecloth",   count = 50 })
+    stepper:Push({ name = "Felcloth",    count = 20 })
+    cw:Print("Cogworks", "pushed 2 items; queue now " .. #stepper:GetRemaining())
+  end)
+  pushBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
+
+  restartBtn = cw:CreateButton(f, "Restart", 100, 24, function()
+    if stepper then
+      stepper:Hide()
+      stepper:SetParent(nil)
+      itemFs, ctxFs = nil, nil
+    end
+    buildStepper()
+  end)
+  restartBtn:SetPoint("LEFT", pushBtn, "RIGHT", 8, 0)
 
   return f
 end
