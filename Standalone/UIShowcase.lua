@@ -2752,7 +2752,7 @@ pages.loading = function(parent)
   end)
   detBtn:SetPoint("TOPLEFT", indetBtn, "BOTTOMLEFT", 0, -8)
 
-  local flipBtn = cw:CreateButton(f, "Flip indeterminate ↔ determinate", 220, 24, function()
+  local flipBtn = cw:CreateButton(f, "Flip indeterminate <-> determinate", 220, 24, function()
     if not handle or not handle:IsShown() then return end
     if handle:GetProgress() then
       handle:SetProgress(nil)
