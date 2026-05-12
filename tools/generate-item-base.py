@@ -112,6 +112,29 @@ ITEM_PATH_FMT = "/data/wow/item/{item_id}"
 # if every item ID 404s.
 VERSION_FALLBACK = "unknown"
 
+# Valid Blizzard Game Data API locale codes (underscore form). WoW client-side
+# locale codes (`enUS`, `deDE`, …) are the CLI/TOC convention, so we accept those
+# and translate at the API boundary. Sending an unknown locale causes Blizzard
+# to return localized strings as a `{en_US: "...", de_DE: "..."}` dict instead
+# of the flat string we want; v1 of this script crashed on that dict at the
+# `.lower()` call further down.
+_API_LOCALES = {
+    "enUS": "en_US", "esMX": "es_MX", "ptBR": "pt_BR", "deDE": "de_DE",
+    "enGB": "en_GB", "esES": "es_ES", "frFR": "fr_FR", "itIT": "it_IT",
+    "ruRU": "ru_RU", "koKR": "ko_KR", "zhTW": "zh_TW", "zhCN": "zh_CN",
+}
+
+
+def api_locale(wow_locale: str) -> str:
+    """Translate a WoW client locale code to the Blizzard API form."""
+    if wow_locale in _API_LOCALES:
+        return _API_LOCALES[wow_locale]
+    # Pass-through for already-correct (`en_US`) input.
+    if wow_locale in _API_LOCALES.values():
+        return wow_locale
+    raise SystemExit(f"unknown locale: {wow_locale!r}; expected one of {sorted(_API_LOCALES)}")
+
+
 # Pattern for the resolved namespace embedded in `_links.self.href`:
 #   .../data/wow/item/6948?namespace=static-12.0.5_60000-us&locale=enUS
 # captures (1) the dotted patch and (2) the build number.
@@ -178,7 +201,7 @@ class BlizzardClient:
         self._ensure_token()
         self._throttle()
         path = ITEM_PATH_FMT.format(item_id=item_id)
-        query = urllib.parse.urlencode({"namespace": self.namespace, "locale": locale})
+        query = urllib.parse.urlencode({"namespace": self.namespace, "locale": api_locale(locale)})
         url = f"{self.host}{path}?{query}"
         backoff = 1.0
         for attempt in range(5):
