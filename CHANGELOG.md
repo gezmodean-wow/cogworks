@@ -5,6 +5,7 @@ All notable changes to Cogworks-1.0 are tracked here. The library is **additive 
 ## Unreleased
 
 - fix(COG-56): CreateDebugConsole crashed with "attempt to call a nil value" because TabPanel's eager initial activation fired tab `build` closures that reference `f._buildActions` / `_buildInspectors` / `_buildProfile` / `_buildLog` before those methods are defined further down in `CreateDebugConsole`. TabPanel gains an additive `lazy = true` opt (MODULE_MINOR `15 → 16`) that suppresses the auto-activate; Debug.lua passes it and now calls `panel:SetActiveTab(...)` once every builder is wired (MODULE_MINOR `1 → 2`). Bumps lib MINOR `19 → 20`.
+- feat(COG-28): ItemBase loader + generator (placeholder data file with bundled `tools/generate-item-base.py` for refresh). Bumps lib MINOR `20 → 21`.
 
 ## [0.13.2] — 2026-05-05 — Critical: StaticPopupDialogs taint hotfix (COG-30)
 
