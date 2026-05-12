@@ -1957,9 +1957,9 @@ pages.stepper = function(parent)
           return
         end
 
-        itemFs:SetText(item.name .. "  ×" .. item.count)
+        itemFs:SetText(item.name .. "  x" .. item.count)
         local last = ctx.history[#ctx.history]
-        local lastTxt = last and ("last: " .. last.item.name .. " → " .. last.action)
+        local lastTxt = last and ("last: " .. last.item.name .. " -> " .. last.action)
                               or "no prior items"
         ctxFs:SetText("Index " .. ctx.index .. " of " .. ctx.total .. "\n" .. lastTxt)
       end,
