@@ -16,6 +16,11 @@ CLI:
     --end-id    N                  Resume cursor: highest itemID to scan (default 250000).
     --out-path  PATH               Output file path (default Cogworks-1.0/Data/ItemBase-Generated-<locale>.lua).
     --region    {us,eu,kr,tw,cn}   Blizzard API region (default us).
+    --rps       N                  Max global request rate (default 25). Hard ceiling enforced
+                                   by a thread-safe slot reservation across workers.
+    --workers   N                  Concurrent HTTP workers (default 8). One worker tops out at
+                                   ~5.5 req/sec because of per-request RTT (~180ms); parallel
+                                   workers scale linearly until --rps becomes the bottleneck.
     --dry-run                      Print stats but don't write the output file.
 
 Filtering heuristic (issue #28):
@@ -64,9 +69,10 @@ Usage example:
 Notes:
     * Stdlib only (urllib + json) — no `requests` dependency, so the script
       runs in CI / contributor envs without a venv setup step.
-    * Polite to the API: bounded request concurrency (default 25 rps), retries
-      with backoff on 429 / 5xx, and an OAuth token-refresh path. The token
-      Blizzard hands out is good for ~24h; we refresh on 401.
+    * Polite to the API: thread-pool of HTTP workers (default 8) with a
+      global rate-cap reservation, retries with backoff on 429 / 5xx, and an
+      OAuth token-refresh path. The token Blizzard hands out is good for ~24h;
+      we refresh on 401.
     * The script is intentionally idempotent: a re-run on the same range
       produces a byte-identical Lua file given the same upstream data.
 """
@@ -75,11 +81,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import datetime as dt
 import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -97,6 +105,9 @@ DEFAULT_REGION = "us"
 DEFAULT_START_ID = 1
 DEFAULT_END_ID = 250_000  # Sane upper bound; WoW item ID space sits well below this.
 DEFAULT_RPS = 25  # Stay well under Blizzard's 100 req/sec free-tier ceiling.
+DEFAULT_WORKERS = 8  # Concurrent HTTP workers. Per-request RTT is ~180ms, so a
+                     # single worker tops out at ~5.5 req/sec regardless of --rps.
+                     # 8 workers × ~5 req/sec ≈ 40 req/sec global, well under cap.
 
 # OAuth: client-credentials flow, region-specific endpoint.
 TOKEN_ENDPOINT_FMT = "https://oauth.battle.net/token"
@@ -162,6 +173,9 @@ class BlizzardClient:
         # Captured from the first 200 response's resolved namespace. Stays None
         # until we get a real item back; main() falls back to VERSION_FALLBACK.
         self.resolved_version: str | None = None
+        # One lock guards token rotation, resolved_version capture, and throttle
+        # slot reservation. Critical sections are brief so a single lock is fine.
+        self._lock = threading.Lock()
 
     # -- token ----------------------------------------------------------------
 
@@ -185,16 +199,27 @@ class BlizzardClient:
         self._token_expires_at = time.time() + int(payload["expires_in"]) - 60
 
     def _ensure_token(self) -> None:
-        if self._token is None or time.time() >= self._token_expires_at:
-            self._fetch_token()
+        # Fast path: read without locking; safe because _token is replaced
+        # atomically. Slow path: lock + re-check + refresh.
+        if self._token is not None and time.time() < self._token_expires_at:
+            return
+        with self._lock:
+            if self._token is None or time.time() >= self._token_expires_at:
+                self._fetch_token()
 
     # -- requests -------------------------------------------------------------
 
     def _throttle(self) -> None:
-        gap = time.time() - self._last_call
-        if gap < self.min_interval:
-            time.sleep(self.min_interval - gap)
-        self._last_call = time.time()
+        # Thread-safe slot reservation: under the lock, claim the next legal
+        # call time. Then sleep outside the lock so other workers can claim
+        # their own slots in parallel — staggered by min_interval globally.
+        with self._lock:
+            now = time.time()
+            slot = max(self._last_call + self.min_interval, now)
+            self._last_call = slot
+            sleep_for = slot - now
+        if sleep_for > 0:
+            time.sleep(sleep_for)
 
     def get_item(self, item_id: int, locale: str) -> dict[str, Any] | None:
         """Return the parsed item JSON, or None for 404 (item ID not assigned)."""
@@ -216,6 +241,8 @@ class BlizzardClient:
                     href = ((payload.get("_links") or {}).get("self") or {}).get("href", "")
                     m = _NAMESPACE_RE.search(href)
                     if m:
+                        # Last-writer-wins is fine; every response yields the
+                        # same string. No lock needed.
                         self.resolved_version = f"{m.group(1)}.{m.group(2)}"
                 return payload
             except urllib.error.HTTPError as exc:
@@ -350,7 +377,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--region", default=DEFAULT_REGION, choices=["us", "eu", "kr", "tw", "cn"])
     p.add_argument("--start-id", type=int, default=DEFAULT_START_ID)
     p.add_argument("--end-id", type=int, default=DEFAULT_END_ID)
-    p.add_argument("--rps", type=int, default=DEFAULT_RPS)
+    p.add_argument("--rps", type=int, default=DEFAULT_RPS,
+                   help=f"Max global request rate (default {DEFAULT_RPS}). Real ceiling is "
+                        "min(--rps, --workers / per-request-RTT); RTT is ~180ms.")
+    p.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                   help=f"Number of concurrent HTTP workers (default {DEFAULT_WORKERS}). "
+                        "At ~180ms RTT, one worker is ~5.5 req/sec; 8 workers ≈ 40 req/sec.")
     p.add_argument("--out-path", type=Path, default=None,
                    help="Override output file. Default: Cogworks-1.0/Data/ItemBase-Generated-<locale>.lua")
     p.add_argument("--dry-run", action="store_true",
@@ -378,23 +410,38 @@ def main(argv: list[str]) -> int:
     seen = 0
     kept = 0
 
-    for item_id in range(args.start_id, args.end_id + 1):
-        seen += 1
+    # Workers do the network I/O; main thread does the deterministic merge so
+    # the collision policy (highest-quality + highest-id wins) doesn't depend
+    # on completion order. Workers return (item_id, normalized_entry_or_None);
+    # entries that are None mean 404 / filtered / fetch-error.
+    def fetch_one(item_id: int) -> tuple[int, dict[str, Any] | None]:
         try:
             raw = client.get_item(item_id, args.locale)
         except Exception as exc:  # noqa: BLE001
             print(f"WARN: item {item_id} fetch failed: {exc}", file=sys.stderr)
-            continue
-        if raw is None:
-            continue
-        if not is_tradeable(raw):
-            continue
-        entry = normalize(raw)
-        items[item_id] = entry
-        kept += 1
+            return (item_id, None)
+        if raw is None or not is_tradeable(raw):
+            return (item_id, None)
+        return (item_id, normalize(raw))
 
-        # byName: lowercased name -> primary itemID.
-        # Collision policy v1: highest-quality + most-recent wins (latter clobbers).
+    fetched: list[tuple[int, dict[str, Any]]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = (pool.submit(fetch_one, i)
+                   for i in range(args.start_id, args.end_id + 1))
+        for fut in concurrent.futures.as_completed(list(futures)):
+            item_id, entry = fut.result()
+            seen += 1
+            if entry is not None:
+                fetched.append((item_id, entry))
+                kept += 1
+            if seen % 1000 == 0:
+                print(f"... scanned {seen} ids, kept {kept}", file=sys.stderr)
+
+    # Deterministic merge: process in item-id order so the "latter wins on tie"
+    # half of the collision policy is reproducible across runs.
+    fetched.sort(key=lambda t: t[0])
+    for item_id, entry in fetched:
+        items[item_id] = entry
         name = (entry.get("name") or "").lower()
         if not name:
             continue
@@ -405,9 +452,6 @@ def main(argv: list[str]) -> int:
             prev_q = items[prev_id]["q"]
             if entry["q"] > prev_q or (entry["q"] == prev_q and item_id > prev_id):
                 by_name[name] = item_id
-
-        if seen % 1000 == 0:
-            print(f"... scanned {seen} ids, kept {kept}", file=sys.stderr)
 
     table = {
         "version": client.resolved_version or VERSION_FALLBACK,
