@@ -2561,9 +2561,9 @@ pages.drawer = function(parent)
   intro:SetJustifyH("LEFT")
   intro:SetWordWrap(true)
   intro:SetTextColor(unpack(T.textDim))
-  intro:SetText("Non-modal floating panel that anchors next to a parent (the showcase, in this demo). Drag the title to move; ESC closes; geometry persists.")
+  intro:SetText("Non-modal floating panel that anchors next to a parent (the showcase, in this demo). Drag the title to move; ESC closes; geometry persists. The second button below uses opts.animate to slide-and-fade the drawer in from its anchor edge.")
 
-  cw:CreateButton(f, "Toggle drawer", 200, 28, function()
+  local plain = cw:CreateButton(f, "Toggle drawer (instant)", 220, 28, function()
     if not f._drawer then
       f._drawer = cw:CreateDrawer({
         name        = "CogworksShowcaseSampleDrawer",
@@ -2586,7 +2586,40 @@ pages.drawer = function(parent)
       body:SetText("This is drawer.content. Caller anchors widgets here. The drawer auto-anchors to the showcase frame on Show, and persists position once you drag it.")
     end
     f._drawer:Toggle()
-  end):SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+  end)
+  plain:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  local animated = cw:CreateButton(f, "Toggle drawer (animated)", 220, 28, function()
+    if not f._animatedDrawer then
+      f._animatedDrawer = cw:CreateDrawer({
+        name        = "CogworksShowcaseAnimatedDrawer",
+        title       = "Animated drawer",
+        width       = 260,
+        height      = 320,
+        resizable   = true,
+        anchorTo    = showcase,
+        anchorPoint = "TOPRIGHT",
+        anchorRelativePoint = "TOPLEFT",
+        anchorOffset = { x = -6, y = 0 },
+        animate = {
+          direction = "left",       -- drawer is on the LEFT of showcase, slides leftward into place
+          duration  = 0.18,
+          easing    = "out",
+          distance  = 28,
+        },
+      })
+      local body = f._animatedDrawer.content:CreateFontString(nil, "OVERLAY")
+      body:SetFontObject(cw.Fonts.small)
+      body:SetPoint("TOPLEFT", 8, -8)
+      body:SetPoint("RIGHT", -8, 0)
+      body:SetJustifyH("LEFT")
+      body:SetWordWrap(true)
+      body:SetTextColor(unpack(T.text))
+      body:SetText("Sliding from the showcase's left edge. Toggle while the animation is mid-flight to see the reverse: it flips direction without flicker. ESC during the slide-in cancels and reverses out.")
+    end
+    f._animatedDrawer:Toggle()
+  end)
+  animated:SetPoint("TOPLEFT", plain, "BOTTOMLEFT", 0, -8)
 
   return f
 end
