@@ -25,7 +25,7 @@ assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires C
 -- because every consumer ships the same external, the path resolves either way.
 local LIB_LOADER_ADDON = ...
 
-local MAJOR, MINOR = "Cogworks-1.0", 21
+local MAJOR, MINOR = "Cogworks-1.0", 22
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0

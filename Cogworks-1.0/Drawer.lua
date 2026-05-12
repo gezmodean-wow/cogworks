@@ -34,11 +34,32 @@
 --   drawer:Show() / Hide() / Toggle()
 --   drawer:SetTitle("New title")
 --   drawer:SetOnClose(function() ... end)
+--
+-- Optional edge-reveal animation (COG-38). Pass opts.animate to slide the
+-- drawer out from its anchor edge over a short duration:
+--
+--   cw:CreateDrawer({
+--     ...
+--     animate = {
+--       direction = "right",   -- "right" | "left" | "up" | "down"
+--                              -- the axis the drawer slides along; right means
+--                              -- it slides rightward into place (typical for
+--                              -- a drawer anchored to the right of mainFrame)
+--       duration  = 0.15,      -- seconds; default 0.15
+--       easing    = "out",     -- "in" | "out" | "inout"; default "out"
+--       distance  = 24,        -- px translation distance; default 24
+--     },
+--   })
+--
+-- nil opts.animate preserves the original instant-show / instant-hide
+-- behavior bit-exact. Toggle / Hide / Show during an in-flight animation
+-- reverse cleanly. ESC during a Show animation cancels Show and plays the
+-- Hide reverse.
 
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 2
+local MODULE_MINOR = 3
 lib._modules = lib._modules or {}
 if (lib._modules.Drawer or 0) >= MODULE_MINOR then return end
 lib._modules.Drawer = MODULE_MINOR
@@ -168,10 +189,152 @@ function lib:CreateDrawer(opts)
   hooksecurefunc(f, "Show", applyShowAnchor)
   applyShowAnchor()  -- initial
 
-  -- ---- Public surface --------------------------------------------------
-  function f:Toggle()
-    if self:IsShown() then self:Hide() else self:Show() end
+  -- ---- Edge-reveal animation (optional; COG-38) ------------------------
+  -- When opts.animate is set, Show fades + slides the drawer in from the
+  -- chosen direction; Hide reverses then calls the raw Hide. Show/Hide/
+  -- Toggle during an in-flight animation reverse cleanly. nil opts.animate
+  -- preserves the original instant-show / instant-hide behavior bit-exact.
+  if opts.animate then
+    local anim = {
+      state     = "hidden",                            -- hidden | showing | shown | hiding
+      progress  = 0,                                   -- 0..1
+      duration  = opts.animate.duration or 0.15,
+      direction = opts.animate.direction or "right",
+      easing    = opts.animate.easing    or "out",
+      distance  = opts.animate.distance  or 24,
+    }
+
+    local function ease(t)
+      if anim.easing == "in" then
+        return t * t
+      elseif anim.easing == "inout" then
+        if t < 0.5 then return 2 * t * t end
+        local u = 1 - t
+        return 1 - 2 * u * u
+      end
+      -- default: "out"
+      local u = 1 - t
+      return 1 - u * u
+    end
+
+    -- Resolve the final (shown) anchor exactly like applyShowAnchor does,
+    -- then apply a translation derived from current animation progress.
+    local function applyVisual()
+      local e = ease(anim.progress)
+      f:SetAlpha(e)
+
+      local sv = opts.saveTo
+      local point, relTo, relPoint, fx, fy
+      if sv and sv.x and sv.y then
+        point, relTo, relPoint = "BOTTOMLEFT", UIParent, "BOTTOMLEFT"
+        fx, fy = sv.x, sv.y
+      elseif opts.anchorTo then
+        point    = opts.anchorPoint or "TOPLEFT"
+        relTo    = opts.anchorTo
+        relPoint = opts.anchorRelativePoint or "TOPRIGHT"
+        local aoff = opts.anchorOffset or { x = 4, y = 0 }
+        fx, fy = aoff.x or 0, aoff.y or 0
+      else
+        point, relTo, relPoint = "CENTER", UIParent, "CENTER"
+        fx, fy = 0, 0
+      end
+
+      local off = (1 - e) * anim.distance
+      local dx, dy = 0, 0
+      if     anim.direction == "right" then dx = -off  -- start to the left, slide right
+      elseif anim.direction == "left"  then dx =  off
+      elseif anim.direction == "up"    then dy = -off
+      elseif anim.direction == "down"  then dy =  off
+      end
+
+      f:ClearAllPoints()
+      f:SetPoint(point, relTo, relPoint, fx + dx, fy + dy)
+    end
+
+    -- Per-frame ticker driving the state machine.
+    local rawHide = f.Hide
+    local ticker = CreateFrame("Frame", nil, f)
+    ticker:Hide()
+    ticker:SetScript("OnUpdate", function(_, elapsed)
+      if anim.state == "showing" then
+        anim.progress = anim.progress + elapsed / anim.duration
+        if anim.progress >= 1 then
+          anim.progress = 1
+          anim.state    = "shown"
+          applyVisual()
+          ticker:Hide()
+          return
+        end
+        applyVisual()
+      elseif anim.state == "hiding" then
+        anim.progress = anim.progress - elapsed / anim.duration
+        if anim.progress <= 0 then
+          anim.progress = 0
+          anim.state    = "hidden"
+          applyVisual()
+          ticker:Hide()
+          rawHide(f)
+          return
+        end
+        applyVisual()
+      end
+    end)
+
+    -- Hook Show: applyShowAnchor (above) sets the final anchor; we then
+    -- override with the hidden-state visual and start the show animation.
+    -- Repeat Show calls when already showing / shown are no-ops.
+    hooksecurefunc(f, "Show", function()
+      if anim.state == "shown" or anim.state == "showing" then return end
+      if anim.state == "hiding" then
+        -- Mid-flight reversal: keep progress, flip direction.
+        anim.state = "showing"
+        ticker:Show()
+        return
+      end
+      -- state == "hidden"
+      anim.state    = "showing"
+      anim.progress = 0
+      applyVisual()
+      ticker:Show()
+    end)
+
+    -- Wrap Hide. UISpecialFrames ESC handling calls f:Hide() directly, so
+    -- the wrapper handles the secure dismissal path too.
+    function f:Hide(...)
+      if anim.state == "hidden" then
+        rawHide(self)
+        return
+      end
+      if anim.state == "hiding" then return end
+      if anim.state == "showing" then
+        anim.state = "hiding"
+        ticker:Show()
+        return
+      end
+      -- state == "shown"
+      anim.state    = "hiding"
+      anim.progress = 1
+      ticker:Show()
+    end
+
+    -- Toggle uses anim.state so a click during the hiding animation flips
+    -- back to showing (IsShown() would still return true during hiding).
+    function f:Toggle()
+      if anim.state == "shown" or anim.state == "showing" then
+        self:Hide()
+      else
+        self:Show()
+      end
+    end
+
+    f._anim = anim  -- exposed for tests / introspection
+  else
+    function f:Toggle()
+      if self:IsShown() then self:Hide() else self:Show() end
+    end
   end
+
+  -- ---- Public surface --------------------------------------------------
   function f:SetTitle(text)   titleFs:SetText(text or "") end
   function f:GetTitle()       return titleFs:GetText() end
   function f:SetOnClose(fn)   onCloseCb = fn end
