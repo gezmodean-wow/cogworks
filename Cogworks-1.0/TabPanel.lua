@@ -37,7 +37,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 15
+local MODULE_MINOR = 16
 lib._modules = lib._modules or {}
 if (lib._modules.TabPanel or 0) >= MODULE_MINOR then return end
 lib._modules.TabPanel = MODULE_MINOR
@@ -212,8 +212,15 @@ function lib:CreateTabPanel(parent, opts)
   function panel:SetActiveTab(key) setActive(key) end
   function panel:GetActiveTab()    return activeTab end
 
-  -- Initial activation. Defaults to first tab.
-  setActive(opts.initialTab or opts.tabs[1].key)
+  -- Initial activation. Defaults to first tab. Pass `lazy = true` to skip —
+  -- the consumer is expected to call `panel:SetActiveTab(key)` later, after
+  -- wiring up any tab.build closures whose upvalues aren't resolved at
+  -- construction time (typical: a tab's `build` references methods defined
+  -- on the host frame below this call, so they don't exist yet when the
+  -- panel auto-activates the first tab).
+  if not opts.lazy then
+    setActive(opts.initialTab or opts.tabs[1].key)
+  end
 
   return panel
 end
