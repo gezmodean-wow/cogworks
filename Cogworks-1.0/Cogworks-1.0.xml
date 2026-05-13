@@ -32,5 +32,6 @@
     <Script file="Drawer.lua" />
     <Script file="Slash.lua" />
     <Script file="Toast.lua" />
+    <Script file="Loading.lua" />
 
 </Ui>
