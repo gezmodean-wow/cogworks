@@ -186,6 +186,7 @@ local function createShowcase()
     { key = "mainframe",label = "MainFrame",   icon = "Interface\\Buttons\\UI-MicroButton-MainMenu-Up" },
     { key = "drawer",   label = "Drawer",      icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
     { key = "toast",    label = "Toast",       icon = "Interface\\COMMON\\Indicator-Yellow" },
+    { key = "loading",  label = "Loading",     icon = "Interface\\COMMON\\StreamCircle" },
     { key = "slash",    label = "Slash",       icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
   }
 
@@ -2665,6 +2666,124 @@ pages.toast = function(parent)
     cw:ClearToasts()
   end)
   clearBtn:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -16)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: ShowLoading (async-state overlay)
+-- ============================================================================
+
+pages.loading = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT",   f, "RIGHT",   -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("ShowLoading returns a handle for a centered banner with a pulsing-dots "
+              .. "spinner. Switching SetProgress from nil to a number flips to a "
+              .. "determinate brass bar with percent suffix. dimBackground covers the "
+              .. "parent; cancelable adds an X + ESC + onCancel.")
+
+  local handle
+  local timer = CreateFrame("Frame", nil, f)
+  timer:Hide()
+
+  local function stopFakeWork()
+    timer:Hide()
+    timer:SetScript("OnUpdate", nil)
+  end
+
+  -- Drive a fake "work happening" loop so determinate progress climbs.
+  local function startFakeWork()
+    local progress = 0
+    timer:SetScript("OnUpdate", function(_, elapsed)
+      if not handle or not handle:IsShown() then
+        stopFakeWork(); return
+      end
+      progress = progress + elapsed * 0.25  -- finishes in 4s
+      if progress >= 1 then
+        handle:SetProgress(1)
+        handle:SetText("Done")
+        stopFakeWork()
+        C_Timer.After(0.5, function()
+          if handle and handle:IsShown() then handle:Hide() end
+        end)
+      else
+        handle:SetProgress(progress)
+        handle:SetText(string.format("Refreshing prices… %d of 600",
+          math.floor(progress * 600)))
+      end
+    end)
+    timer:Show()
+  end
+
+  local indetBtn = cw:CreateButton(f, "Show indeterminate", 200, 24, function()
+    if handle and handle:IsShown() then handle:Hide() end
+    handle = cw:ShowLoading(f, {
+      text          = "Refreshing prices…",
+      cancelable    = true,
+      onCancel      = function()
+        cw:Print("Cogworks", "loading cancelled by user")
+        stopFakeWork()
+      end,
+    })
+    stopFakeWork()
+  end)
+  indetBtn:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  local detBtn = cw:CreateButton(f, "Show determinate (climbs)", 200, 24, function()
+    if handle and handle:IsShown() then handle:Hide() end
+    handle = cw:ShowLoading(f, {
+      text          = "Refreshing prices… 0 of 600",
+      progress      = 0,
+      cancelable    = true,
+      onCancel      = function()
+        cw:Print("Cogworks", "loading cancelled by user")
+        stopFakeWork()
+      end,
+    })
+    startFakeWork()
+  end)
+  detBtn:SetPoint("TOPLEFT", indetBtn, "BOTTOMLEFT", 0, -8)
+
+  local flipBtn = cw:CreateButton(f, "Flip indeterminate <-> determinate", 220, 24, function()
+    if not handle or not handle:IsShown() then return end
+    if handle:GetProgress() then
+      handle:SetProgress(nil)
+      handle:SetText("Working…")
+      stopFakeWork()
+    else
+      handle:SetProgress(0)
+      handle:SetText("Refreshing prices… 0 of 600")
+      startFakeWork()
+    end
+  end)
+  flipBtn:SetPoint("TOPLEFT", detBtn, "BOTTOMLEFT", 0, -8)
+
+  local dimBtn = cw:CreateButton(f, "Show with dimBackground", 220, 24, function()
+    if handle and handle:IsShown() then handle:Hide() end
+    handle = cw:ShowLoading(f, {
+      text          = "Heavy work… page is blocked",
+      cancelable    = true,
+      dimBackground = true,
+      onCancel      = function()
+        cw:Print("Cogworks", "dim loading cancelled by user")
+      end,
+    })
+  end)
+  dimBtn:SetPoint("TOPLEFT", flipBtn, "BOTTOMLEFT", 0, -8)
+
+  local hideBtn = cw:CreateButton(f, "Hide", 100, 24, function()
+    if handle then handle:Hide() end
+    stopFakeWork()
+  end)
+  hideBtn:SetPoint("TOPLEFT", dimBtn, "BOTTOMLEFT", 0, -16)
 
   return f
 end
