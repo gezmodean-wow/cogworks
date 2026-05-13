@@ -5,6 +5,7 @@ All notable changes to Cogworks-1.0 are tracked here. The library is **additive 
 ## Unreleased
 
 - fix(COG-56): CreateDebugConsole crashed with "attempt to call a nil value" because TabPanel's eager initial activation fired tab `build` closures that reference `f._buildActions` / `_buildInspectors` / `_buildProfile` / `_buildLog` before those methods are defined further down in `CreateDebugConsole`. TabPanel gains an additive `lazy = true` opt (MODULE_MINOR `15 → 16`) that suppresses the auto-activate; Debug.lua passes it and now calls `panel:SetActiveTab(...)` once every builder is wired (MODULE_MINOR `1 → 2`). Bumps lib MINOR `19 → 20`.
+- **`lib:CreateStepper(parent, opts)`** (`Cogworks-1.0/Stepper.lua`, COG-36) — queue-based one-at-a-time walkthrough primitive; Wizard's sibling for unknown-length item flows. Caller-defined footer actions, Push during traversal, Skip / Back / Cancel / onComplete. Distinct from `CreateWizard` (fixed-N linear setup with validate gate). Unblocks FlipQueue's Deal Finder migration and FlipQueue #160 (failed-post recovery). Bumps lib MINOR `20 → 21`.
 
 ## [0.13.2] — 2026-05-05 — Critical: StaticPopupDialogs taint hotfix (COG-30)
 
