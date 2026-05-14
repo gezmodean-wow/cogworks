@@ -2,6 +2,10 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## Unreleased
+
+- **`cw:CreateAppearanceTab(parent, opts)` + adoption convention** (`Cogworks-1.0/Scaling.lua`, MODULE_MINOR `2 → 3`, COG-71) — additive clear-intent alias for `CreateUIScalingSettingsBlock`. Both functions are identical; the new name names the convention: every cog's settings UI ends with an **"Appearance"** tab whose body is a single `cw:CreateAppearanceTab(parent, { cog = "MyCog" })` call. Cog-specific toggles / pickers go in **other** tabs; Appearance is reserved for the standard suite-wide primitive so future UX improvements (theme color editor, new overrides, etc.) reach every cog the day they ship. All writes flow through cogworks into `CogworksSharedDB`. Per-cog overrides for `fontScale` + `fontFamily` are scoped to `cog`; `uiScale` + theme stay suite-wide for the v0.14.x line (per-cog theme is a planned multi-release stretch — filed as a follow-up cogworks issue). Adoption tickets for Tally + FlipQueue are filed on their respective trackers. Showcase page at `/cogworks ui` → "Appearance tab" demos the canonical pattern. Bumps lib MINOR `27 → 28`.
+
 ## [0.14.1] — 2026-05-14 — CreateDebugConsole tab-overlap hotfix (COG-69)
 
 Bumps `MINOR` from `26` to `27`. Hotfix for a developer-visible regression unmasked by v0.14.0: switching between Actions / Inspectors / Profile / Log tabs in `CreateDebugConsole` no longer hides the previous tab's chrome, so all four tabs' contents pile onto the shared content frame and overlap visibly.

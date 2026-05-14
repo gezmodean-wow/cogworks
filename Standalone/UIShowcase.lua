@@ -188,6 +188,7 @@ local function createShowcase()
     { key = "toast",    label = "Toast",       icon = "Interface\\COMMON\\Indicator-Yellow" },
     { key = "loading",  label = "Loading",     icon = "Interface\\COMMON\\StreamCircle" },
     { key = "tasks",    label = "Task progress", icon = "Interface\\COMMON\\Indicator-Green" },
+    { key = "appearance", label = "Appearance tab", icon = "Interface\\Buttons\\UI-MicroButton-Collections-Up" },
     { key = "slash",    label = "Slash",       icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
   }
 
@@ -2987,6 +2988,87 @@ pages.tasks = function(parent)
     _multiTicker:SetScript("OnUpdate", nil)
   end)
   hideMultiBtn:SetPoint("TOPLEFT", startMultiBtn, "BOTTOMLEFT", 0, -8)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Appearance tab convention (COG-71)
+-- ============================================================================
+-- Demonstrates the standard adoption pattern: a cog's settings UI uses a
+-- TabPanel where the LAST tab is "Appearance" and its body is a single
+-- cw:CreateAppearanceTab(parent, { cog = "<cog>" }) call. Cog-specific
+-- toggles / pickers go in OTHER tabs; the Appearance tab is reserved for
+-- the standard suite-wide primitive so future UX improvements (theme color
+-- editor, new overrides, etc.) reach every cog the day they ship.
+
+pages.appearance = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT",   f, "RIGHT",   -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("Convention (COG-71): every cog's settings UI ends with an 'Appearance' tab whose body is a single "
+              .. "cw:CreateAppearanceTab(parent, { cog = '<cog>' }) call. Suite-wide UX improvements (theme color "
+              .. "editor, new overrides) reach every cog the day they ship. Below is a fake cog settings page with "
+              .. "two cog-specific tabs followed by the standard Appearance tab. The per-cog override checkbox at "
+              .. "the top of the Appearance tab toggles whether this 'cog' uses its own profile or follows suite-active.")
+
+  local mockSettings = CreateFrame("Frame", nil, f)
+  mockSettings:SetPoint("TOPLEFT",     intro,           "BOTTOMLEFT",  0, -16)
+  mockSettings:SetPoint("BOTTOMRIGHT", f,               "BOTTOMRIGHT", -12, 12)
+
+  cw:CreateTabPanel(mockSettings, {
+    tabs = {
+      { key = "general", label = "General",
+        build = function(c)
+          local p = CreateFrame("Frame", nil, c); p:SetAllPoints()
+          local fs = p:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.normal)
+          fs:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -16)
+          fs:SetPoint("RIGHT", p, "RIGHT", -16, 0)
+          fs:SetJustifyH("LEFT")
+          fs:SetWordWrap(true)
+          fs:SetTextColor(unpack(T.text))
+          fs:SetText("This is where a cog's general toggles live: enable scanner, show minimap button, etc. "
+                  .. "Anything cog-specific stays out of the Appearance tab so the standard primitive's UX "
+                  .. "matches across the suite.")
+          return p
+        end },
+      { key = "data", label = "Data",
+        build = function(c)
+          local p = CreateFrame("Frame", nil, c); p:SetAllPoints()
+          local fs = p:CreateFontString(nil, "OVERLAY")
+          fs:SetFontObject(cw.Fonts.normal)
+          fs:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -16)
+          fs:SetPoint("RIGHT", p, "RIGHT", -16, 0)
+          fs:SetJustifyH("LEFT")
+          fs:SetWordWrap(true)
+          fs:SetTextColor(unpack(T.text))
+          fs:SetText("Another cog-specific tab. Filters / data retention / import settings. "
+                  .. "The cog owns the layout and content of every tab except 'Appearance'.")
+          return p
+        end },
+      { key = "appearance", label = "Appearance",
+        build = function(c)
+          -- The canonical one-call body of every cog's Appearance tab.
+          -- `cog = "ShowcaseDemo"` opts the demo into the per-cog override
+          -- controls (checkbox + profile dropdown at the top of the block);
+          -- swap "ShowcaseDemo" for the actual cog name in real adoption.
+          return cw:CreateAppearanceTab(c, {
+            cog         = "ShowcaseDemo",
+            description = "Suite-wide appearance: profile, fonts, theme. Toggle the per-cog override "
+                       .. "at the top to give this cog its own font scale + family while leaving the "
+                       .. "rest of the suite at the active profile.",
+          })
+        end },
+    },
+  }):SetAllPoints(mockSettings)
 
   return f
 end

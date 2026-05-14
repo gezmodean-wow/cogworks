@@ -1,25 +1,62 @@
 -- Cogworks-1.0/Scaling.lua | UI scaling settings block + per-frame scale registration.
 --
--- Two consumer-facing primitives:
+-- Consumer-facing primitives:
+--
+--   cw:CreateAppearanceTab(parent, opts)
+--     **Preferred entry point.** Builds the standard cogworks-managed
+--     appearance controls (profile picker + per-cog override + font/UI scale
+--     sliders + font family + theme dropdown + reset). Drop into a dedicated
+--     tab in every cog's settings UI for suite-wide consistency. (COG-71)
 --
 --   cw:CreateUIScalingSettingsBlock(parent, opts)
---     Drop-in section for any cog's settings page. Exposes profile dropdown,
---     font/UI scale sliders, font family + theme dropdowns, reset button, and
---     (when opts.cog is set) the per-cog override controls.
+--     Legacy name for the same primitive. Kept for back-compat; prefer
+--     CreateAppearanceTab in new code.
 --
 --   cw:RegisterScalingFrame(frame, opts)
 --     Subscribes a frame to SettingsChanged for uiScale so SetScale fires
 --     automatically. Optionally persists frame geometry into a caller-owned SV
 --     table.
 --
--- Both build on the lib's existing settings/profile API (Cogworks-1.0.lua) and
--- the SettingsChanged event bus.
+-- ============================================================================
+-- Appearance-tab convention (COG-71)
+-- ============================================================================
+-- Every cog should expose cogworks-managed appearance settings in a dedicated
+-- tab inside its own settings UI. The convention:
+--
+--   * Tab label:     "Appearance"
+--   * Tab position:  last tab in the cog's settings TabPanel
+--   * Tab body:      a single call to cw:CreateAppearanceTab(parent, { cog = "MyCog" })
+--   * Cog-specific:  toggles / picker rows / debug knobs go in OTHER tabs.
+--                    The Appearance tab is reserved for the standard primitive
+--                    so suite-wide UX improvements (color editors, new
+--                    overrides, etc.) reach every cog the day they ship.
+--
+-- Persistence: all writes flow through cogworks into CogworksSharedDB
+-- (account-wide, shared by every cog). Per-cog overrides for fontScale +
+-- fontFamily are scoped to `cog`; uiScale + theme stay suite-wide for the
+-- v0.14.x line (per-cog theme is a planned multi-release stretch).
+--
+-- Adoption example (in a cog's main settings TabPanel):
+--
+--   local panel = cw:CreateTabPanel(parent, {
+--     tabs = {
+--       { key = "general",    label = "General",    build = function(c) ... end },
+--       { key = "scanner",    label = "Scanner",    build = function(c) ... end },
+--       -- ... cog-specific tabs ...
+--       { key = "appearance", label = "Appearance",
+--         build = function(c)
+--           return cw:CreateAppearanceTab(c, { cog = "MyCog" })
+--         end },
+--     },
+--   })
+--
+-- See Standalone/UIShowcase.lua -> "Appearance" page for a runnable demo.
 
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 2
+local MODULE_MINOR = 3
 lib._modules = lib._modules or {}
 if (lib._modules.Scaling or 0) >= MODULE_MINOR then return end
 lib._modules.Scaling = MODULE_MINOR
@@ -490,6 +527,15 @@ function lib:CreateUIScalingSettingsBlock(parent, opts)
   block.themeDropdown   = themeDD
   block.resetButton     = resetBtn
   return block
+end
+
+-- Preferred entry point. Identical to CreateUIScalingSettingsBlock; the name
+-- makes the convention from the top-of-file comment unambiguous at call sites
+-- (`local appearance = cw:CreateAppearanceTab(content, { cog = "MyCog" })`).
+-- See the Appearance-tab convention block above for the standard adoption
+-- shape (dedicated last tab in the cog's settings TabPanel). (COG-71)
+function lib:CreateAppearanceTab(parent, opts)
+  return self:CreateUIScalingSettingsBlock(parent, opts)
 end
 
 -- ============================================================================
