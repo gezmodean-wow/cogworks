@@ -1782,11 +1782,27 @@ pages.wizard = function(parent)
           fs:SetJustifyH("LEFT")
           fs:SetWordWrap(true)
           fs:SetTextColor(unpack(T.text))
-          fs:SetText("Welcome step. The 'Previous' button is disabled here because we're "
-                  .. "on the first step. Click 'Next' to advance — no validation gate on "
-                  .. "this step, so the Next button is always enabled.")
+          fs:SetText("Welcome step with a per-step custom footer (COG-53). The standard "
+                  .. "Cancel/Previous/Next row is replaced by two CTAs: 'Use defaults' "
+                  .. "finishes the wizard immediately; 'Customize' advances through the "
+                  .. "rest of the steps. Subsequent steps fall back to the standard footer.")
           return p
-        end },
+        end,
+        -- COG-53: per-step custom footer override. Replaces the standard
+        -- Cancel/Previous/Next row with two CTAs that branch the flow.
+        footer = function(footer, api)
+          local defaultsBtn = cw:CreateButton(footer, "Use defaults", 140, 26,
+            function()
+              wizardState.agreed = true
+              wizardState.name   = "Default User"
+              api.Finish()
+            end)
+          defaultsBtn:SetPoint("LEFT", footer, "LEFT", 12, 0)
+          local customBtn = cw:CreateButton(footer, "Customize", 140, 26,
+            function() api.Next() end)
+          customBtn:SetPoint("RIGHT", footer, "RIGHT", -12, 0)
+        end,
+      },
 
       { key = "agree", title = "Agree",
         build = function(c)

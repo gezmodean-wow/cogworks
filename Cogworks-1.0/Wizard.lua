@@ -33,12 +33,30 @@
 -- Each step's build(parent) must return a Frame anchored to parent (the
 -- wizard's content frame). The wizard owns Show/Hide; the caller owns
 -- the contents.
+--
+-- Per-step custom footer (COG-53): pass `step.footer = function(footer, api)`
+-- and the wizard hides its standard Cancel / Previous / Next row for that
+-- step, calling your builder against the footer frame instead. `api`
+-- exposes navigation hooks so custom buttons drive the wizard:
+--
+--   step.footer = function(footer, api)
+--     local skip = cw:CreateButton(footer, "Use defaults", 140, 26,
+--       function() api.Finish() end)
+--     skip:SetPoint("LEFT", footer, "LEFT", 12, 0)
+--     local custom = cw:CreateButton(footer, "Customize", 140, 26,
+--       function() api.Next() end)
+--     custom:SetPoint("RIGHT", footer, "RIGHT", -12, 0)
+--   end
+--
+-- The builder is called once per first activation of its step (just like
+-- `build`); the same children are shown/hidden on subsequent re-visits.
+-- `api` methods: `Next`, `Previous`, `Cancel`, `Finish`, `GoTo(key)`.
 
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 15
+local MODULE_MINOR = 16
 lib._modules = lib._modules or {}
 if (lib._modules.Wizard or 0) >= MODULE_MINOR then return end
 lib._modules.Wizard = MODULE_MINOR
@@ -187,6 +205,38 @@ function lib:CreateWizard(parent, opts)
     end
   end
 
+  -- Per-step custom-footer state (COG-53). When a step defines `step.footer`,
+  -- the standard Cancel/Previous/Next row is hidden for that step and a
+  -- caller-built sub-frame takes its place. Children are built lazily once
+  -- per step and shown/hidden on subsequent visits.
+  local customFooters = {}  -- [stepKey] = Frame
+  local navigationApi      -- populated after the wizard's navigation methods exist
+
+  local function applyFooterFor(def)
+    local hasCustom = type(def.footer) == "function"
+
+    if hasCustom then
+      cancelBtn:Hide(); prevBtn:Hide(); nextBtn:Hide()
+    else
+      cancelBtn:Show(); prevBtn:Show(); nextBtn:Show()
+    end
+
+    for k, cf in pairs(customFooters) do
+      if k ~= def.key then cf:Hide() end
+    end
+
+    if hasCustom then
+      local cf = customFooters[def.key]
+      if not cf then
+        cf = CreateFrame("Frame", nil, footer)
+        cf:SetAllPoints()
+        def.footer(cf, navigationApi)
+        customFooters[def.key] = cf
+      end
+      cf:Show()
+    end
+  end
+
   local function showStep(idx)
     local def = opts.steps[idx]
     if not def then return end
@@ -200,6 +250,7 @@ function lib:CreateWizard(parent, opts)
     local page = pageFor(def.key)
     if page then page:Show() end
 
+    applyFooterFor(def)
     applyDots()
     applyButtonState()
 
@@ -234,6 +285,17 @@ function lib:CreateWizard(parent, opts)
 
   prevBtn:SetScript("OnClick", function() wizard:Previous() end)
   nextBtn:SetScript("OnClick", function() wizard:Next() end)
+
+  -- Navigation surface for `step.footer` custom builders. Defined late so
+  -- the wizard:* methods it points at are already in place; applyFooterFor
+  -- captures this local by reference and uses it on first activation.
+  navigationApi = {
+    Next     = function() wizard:Next() end,
+    Previous = function() wizard:Previous() end,
+    GoTo     = function(k) wizard:GoTo(k) end,
+    Cancel   = function() if opts.onCancel   then opts.onCancel()   end end,
+    Finish   = function() if opts.onComplete then opts.onComplete() end end,
+  }
 
   -- Initial state
   showStep(1)
