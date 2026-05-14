@@ -14,7 +14,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for the rationale.
-local MODULE_MINOR = 14
+local MODULE_MINOR = 15
 lib._modules = lib._modules or {}
 if (lib._modules.Items or 0) >= MODULE_MINOR then return end
 lib._modules.Items = MODULE_MINOR
@@ -212,4 +212,112 @@ function lib:ItemsMatch(itemKey, itemName, queueItem, resolvedID, allowFuzzy, lo
   end
 
   return false, false
+end
+
+-- ============================================================================
+-- Tooltip helpers (COG-44)
+-- ============================================================================
+-- Wraps the regular-item / battle-pet fork and the uncached-item fallback so
+-- every cog renders the same tooltip from an itemKey. Replaces the recurring
+-- per-page boilerplate:
+--
+--   GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+--   if itemKey:find("^pet:") then ... else SetHyperlink(...) end
+--   GameTooltip:Show()
+--
+-- across FlipQueue's row-bearing pages and Tally's planned ledger view.
+--
+-- Usage:
+--
+--   cw:ShowItemKeyTooltip(rowFrame, "ANCHOR_RIGHT", itemKey, {
+--     fallbackText = "Loading...",            -- shown while item is uncached
+--     onLoad       = function() row:UpdateTooltip() end,  -- fires when cache hits
+--     tooltip      = GameTooltip,             -- defaults to GameTooltip
+--   })
+--   cw:HideItemKeyTooltip()                   -- convenience for symmetry
+
+-- One shared listener frame drains the uncached-load queue so each call
+-- doesn't leak a fresh frame. Callbacks are keyed by itemID; the same
+-- itemID can have multiple pending callbacks (e.g. several rows showing
+-- the same uncached item) and all fire on the first ITEM_DATA_LOAD_RESULT.
+lib._itemTooltipPending = lib._itemTooltipPending or {}  -- [itemID] = { cb, cb, ... }
+if not lib._itemTooltipListener then
+  local f = CreateFrame("Frame")
+  f:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+  f:SetScript("OnEvent", function(_, _, itemID, success)
+    local cbs = lib._itemTooltipPending[itemID]
+    if not cbs then return end
+    lib._itemTooltipPending[itemID] = nil
+    if not success then return end
+    for _, cb in ipairs(cbs) do
+      local ok, err = pcall(cb)
+      if not ok and geterrorhandler then geterrorhandler()(err) end
+    end
+  end)
+  lib._itemTooltipListener = f
+end
+
+function lib:ShowItemKeyTooltip(owner, anchor, itemKey, opts)
+  opts = opts or {}
+  local tt = opts.tooltip or GameTooltip
+  local fallback = opts.fallbackText or "Loading..."
+  tt:SetOwner(owner, anchor or "ANCHOR_RIGHT")
+
+  if not itemKey or itemKey == "" then
+    tt:SetText(fallback)
+    tt:Show()
+    return
+  end
+
+  -- Battle-pet branch: key is "pet:<speciesID>;q<quality>;".
+  if itemKey:find("^pet:") then
+    local idStr, qStr = strsplit(";", itemKey)
+    local speciesID = idStr:match("^pet:(%d+)")
+    local quality = qStr and tonumber(qStr:match("^q(%d+)$")) or 0
+    if speciesID then
+      -- battlepet link: speciesID:level:quality:health:power:speed:petID
+      tt:SetHyperlink("battlepet:" .. speciesID .. ":0:" .. quality .. ":0:0:0:0")
+    else
+      tt:SetText(fallback)
+    end
+    tt:Show()
+    return
+  end
+
+  local itemString = self:ItemKeyToItemString(itemKey)
+  if not itemString then
+    tt:SetText(fallback)
+    tt:Show()
+    return
+  end
+
+  -- Uncached-item path: itemID resolves but GetItemInfo returns nil until
+  -- the client has loaded the row from the item DB. Show the fallback,
+  -- queue a load request, and fire onLoad once the row lands.
+  local itemID = tonumber(itemString:match("^item:(%d+)"))
+  local cached = itemID and GetItemInfo(itemID)
+  if itemID and not cached then
+    tt:SetText(fallback)
+    tt:Show()
+    if C_Item and C_Item.RequestLoadItemDataByID then
+      C_Item.RequestLoadItemDataByID(itemID)
+    end
+    if opts.onLoad then
+      local cbs = lib._itemTooltipPending[itemID]
+      if not cbs then
+        cbs = {}
+        lib._itemTooltipPending[itemID] = cbs
+      end
+      cbs[#cbs + 1] = opts.onLoad
+    end
+    return
+  end
+
+  tt:SetHyperlink(itemString)
+  tt:Show()
+end
+
+function lib:HideItemKeyTooltip(opts)
+  local tt = (opts and opts.tooltip) or GameTooltip
+  tt:Hide()
 end

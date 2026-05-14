@@ -15,7 +15,19 @@
 --   logger:PrintDebug("AutoScan: bucket=" .. tostring(bucket))
 --
 --   cw:RegisterDebugInspector("FlipQueue", "Tasks", function() return ns.db.todoLists.active.tasks end)
---   cw:RegisterDebugAction("FlipQueue", "Bank popup ×6", function() UI:ShowBankPopup(...) end)
+--   cw:RegisterDebugAction("FlipQueue", "Bank popup x6", function() UI:ShowBankPopup(...) end)
+--
+--   -- Richer action shape (COG-43): group, help tooltip, disabled state.
+--   cw:RegisterDebugAction("FlipQueue", {
+--     group    = "Scanner",                       -- groups stack with a header
+--     label    = "Force full scan",
+--     help     = "Walks bags + bank + warband",   -- tooltip on hover
+--     run      = function() ns:ForceScan() end,
+--     disabled = false,                            -- if true, button is dim + unclickable
+--   })
+--   cw:UnregisterDebugAction("FlipQueue", "Force full scan")  -- by label
+--   cw:GetDebugActions("FlipQueue")  -- returns the cog's action list
+--   cw:GetDebugActions()             -- returns { [cogName] = actions, ... }
 --
 --   cw:Profile("FlipQueue", "AuctionPost.PostItem", function() ... end)
 --
@@ -30,7 +42,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 2
+local MODULE_MINOR = 3
 lib._modules = lib._modules or {}
 if (lib._modules.Debug or 0) >= MODULE_MINOR then return end
 lib._modules.Debug = MODULE_MINOR
@@ -171,14 +183,56 @@ function lib:GetDebugInspectors(cogName) return ensureCog(cogName).inspectors en
 -- Actions
 -- ============================================================================
 
-function lib:RegisterDebugAction(cogName, label, fn)
-  assert(type(label) == "string" and label ~= "", "Debug: action label required")
-  assert(type(fn) == "function",                    "Debug: action fn required")
-  local d = ensureCog(cogName)
-  d.actions[#d.actions + 1] = { label = label, fn = fn }
+local function fireActionRebuild(d)
+  if not d._actionRebuilders then return end
+  for _, cb in ipairs(d._actionRebuilders) do
+    local ok, err = pcall(cb)
+    if not ok and geterrorhandler then geterrorhandler()(err) end
+  end
 end
 
-function lib:GetDebugActions(cogName) return ensureCog(cogName).actions end
+-- Two call shapes (COG-43):
+--   * old positional: cw:RegisterDebugAction(cog, "label", fn)
+--   * new opts table: cw:RegisterDebugAction(cog, { label, run, group?, help?, disabled? })
+-- Both produce an action record { label, fn, group?, help?, disabled? }.
+function lib:RegisterDebugAction(cogName, labelOrOpts, fnMaybe)
+  local action
+  if type(labelOrOpts) == "table" then
+    local o = labelOrOpts
+    assert(type(o.label) == "string" and o.label ~= "", "Debug: action.label required")
+    assert(type(o.run)   == "function",                 "Debug: action.run required")
+    action = { label = o.label, fn = o.run, group = o.group, help = o.help, disabled = o.disabled }
+  else
+    assert(type(labelOrOpts) == "string" and labelOrOpts ~= "", "Debug: action label required")
+    assert(type(fnMaybe)     == "function",                     "Debug: action fn required")
+    action = { label = labelOrOpts, fn = fnMaybe }
+  end
+  local d = ensureCog(cogName)
+  d.actions[#d.actions + 1] = action
+  fireActionRebuild(d)
+end
+
+function lib:UnregisterDebugAction(cogName, label)
+  local d = ensureCog(cogName)
+  for i, a in ipairs(d.actions) do
+    if a.label == label then
+      table.remove(d.actions, i)
+      fireActionRebuild(d)
+      return true
+    end
+  end
+  return false
+end
+
+-- cogName given: returns that cog's action list (legacy semantics).
+-- cogName nil:   returns a fresh map { [cogName] = actions, ... } across
+--                every cog that has ever registered with the debug toolkit.
+function lib:GetDebugActions(cogName)
+  if cogName then return ensureCog(cogName).actions end
+  local out = {}
+  for cog, d in pairs(lib._debug) do out[cog] = d.actions end
+  return out
+end
 
 -- ============================================================================
 -- Profiler
@@ -570,6 +624,8 @@ function lib:CreateDebugConsole(opts)
   function f._buildActions(parent)
     local pad = 8
     local btnW, btnH, gap = 240, 24, 6
+    local HEADER_H = 18
+    local GROUP_GAP = 4
 
     local scroll = CreateFrame("ScrollFrame", nil, parent)
     scroll:SetPoint("TOPLEFT",     parent, "TOPLEFT",     pad, -pad)
@@ -584,41 +640,103 @@ function lib:CreateDebugConsole(opts)
     end)
 
     local cols = 2
+
+    -- Empty-state hint sits independently of the button tree so rebuild()
+    -- can flip it on/off without re-creating the FontString every cycle.
+    local empty = content:CreateFontString(nil, "OVERLAY")
+    empty:SetFontObject(lib:GetFont("small"))
+    empty:SetTextColor(unpack(T.textDim))
+    empty:SetPoint("TOPLEFT", 0, -4)
+    empty:SetText("No actions registered. Use "
+      .. "cw:RegisterDebugAction(\"" .. cog .. "\", { label = ..., run = ... }) to add one.")
+    empty:Hide()
+
     local function rebuild()
-      -- Tear down old buttons
+      -- Tear down old chrome
       if content._btns then
         for _, b in ipairs(content._btns) do b:Hide(); b:SetParent(nil) end
       end
-      content._btns = {}
-      local actions = lib:GetDebugActions(cog)
-      for i, a in ipairs(actions) do
-        local b = lib:CreateButton(content, a.label, btnW, btnH, function()
-          local ok, err = pcall(a.fn)
-          if not ok then lib:PrintError(cog, "action error: " .. tostring(err)) end
-          f._refreshStatus()
-        end)
-        local col = (i - 1) % cols
-        local row = math.floor((i - 1) / cols)
-        b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", content, "TOPLEFT", col * (btnW + gap), -row * (btnH + gap))
-        content._btns[i] = b
+      if content._headers then
+        for _, h in ipairs(content._headers) do h:Hide(); h:SetParent(nil) end
       end
-      local rowCount = math.ceil(math.max(1, #actions) / cols)
-      content:SetHeight(math.max(1, rowCount * (btnH + gap)))
+      content._btns    = {}
+      content._headers = {}
+
+      local actions = lib:GetDebugActions(cog)
+
+      if #actions == 0 then
+        empty:Show()
+        content:SetHeight(40)
+        content:SetWidth(scroll:GetWidth())
+        return
+      end
+      empty:Hide()
+
+      -- Group actions by `group` field, preserving registration order
+      -- within each group and group-first-appearance order across groups.
+      local groupOrder, byGroup = {}, {}
+      for _, a in ipairs(actions) do
+        local key = a.group or ""
+        if not byGroup[key] then
+          byGroup[key] = {}
+          groupOrder[#groupOrder + 1] = key
+        end
+        byGroup[key][#byGroup[key] + 1] = a
+      end
+
+      local y = 0
+      local btnIdx = 0
+      for _, key in ipairs(groupOrder) do
+        if key ~= "" then
+          local h = content:CreateFontString(nil, "OVERLAY")
+          h:SetFontObject(lib:GetFont("small"))
+          h:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+          h:SetTextColor(unpack(T.textDim))
+          h:SetText(key:upper())
+          y = y + HEADER_H
+          content._headers[#content._headers + 1] = h
+        end
+
+        local groupActions = byGroup[key]
+        for i, a in ipairs(groupActions) do
+          local b = lib:CreateButton(content, a.label, btnW, btnH, function()
+            if a.disabled then return end
+            local ok, err = pcall(a.fn)
+            if not ok then lib:PrintError(cog, "action error: " .. tostring(err)) end
+            f._refreshStatus()
+          end)
+          local col = (i - 1) % cols
+          local row = math.floor((i - 1) / cols)
+          b:ClearAllPoints()
+          b:SetPoint("TOPLEFT", content, "TOPLEFT",
+                     col * (btnW + gap), -(y + row * (btnH + gap)))
+          if a.disabled then b:SetAlpha(0.4) end
+          if a.help and a.help ~= "" then
+            b:HookScript("OnEnter", function(btn)
+              GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+              GameTooltip:SetText(a.help, 1, 1, 1, 1, true)
+              GameTooltip:Show()
+            end)
+            b:HookScript("OnLeave", function() GameTooltip:Hide() end)
+          end
+          btnIdx = btnIdx + 1
+          content._btns[btnIdx] = b
+        end
+        local groupRows = math.ceil(#groupActions / cols)
+        y = y + groupRows * (btnH + gap) + GROUP_GAP
+      end
+      content:SetHeight(math.max(1, y))
       content:SetWidth(scroll:GetWidth())
     end
     rebuild()
     content._rebuild = rebuild
     f._actionsTab = content
 
-    -- Empty-state hint
-    if #lib:GetDebugActions(cog) == 0 then
-      local empty = content:CreateFontString(nil, "OVERLAY")
-      empty:SetFontObject(lib:GetFont("small"))
-      empty:SetTextColor(unpack(T.textDim))
-      empty:SetPoint("TOPLEFT", 0, -4)
-      empty:SetText("No actions registered. Use cw:RegisterDebugAction(\"" .. cog .. "\", label, fn) to add one.")
-    end
+    -- Auto-rebuild when other code calls Register/Unregister later. The
+    -- rebuilders list is owned by the per-cog debug state so it survives
+    -- the console being hidden / re-shown. (COG-43)
+    d._actionRebuilders = d._actionRebuilders or {}
+    d._actionRebuilders[#d._actionRebuilders + 1] = rebuild
   end
 
   function f._buildInspectors(parent)
