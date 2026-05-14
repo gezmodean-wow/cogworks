@@ -42,7 +42,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 3
+local MODULE_MINOR = 4
 lib._modules = lib._modules or {}
 if (lib._modules.Debug or 0) >= MODULE_MINOR then return end
 lib._modules.Debug = MODULE_MINOR
@@ -575,10 +575,15 @@ function lib:CreateDebugConsole(opts)
   local panel = self:CreateTabPanel(tabHost, {
     lazy = true,
     tabs = {
-      { key = "actions",    label = "Actions",    build = function(p) f._buildActions(p)    end },
-      { key = "inspectors", label = "Inspectors", build = function(p) f._buildInspectors(p) end },
-      { key = "profile",    label = "Profile",    build = function(p) f._buildProfile(p)    end },
-      { key = "log",        label = "Log",        build = function(p) f._buildLog(p)        end },
+      -- Each builder returns a per-tab wrapper frame so TabPanel can
+      -- Show/Hide it as a unit on tab switch. Returning nothing leaves
+      -- `tabPages[key]` nil in TabPanel, which means setActive can't
+      -- hide the previous tab and all tabs' chrome accumulates on the
+      -- shared content frame (COG-69).
+      { key = "actions",    label = "Actions",    build = function(p) return f._buildActions(p)    end },
+      { key = "inspectors", label = "Inspectors", build = function(p) return f._buildInspectors(p) end },
+      { key = "profile",    label = "Profile",    build = function(p) return f._buildProfile(p)    end },
+      { key = "log",        label = "Log",        build = function(p) return f._buildLog(p)        end },
     },
     onActivate = function(key)
       if key == "log"     and f._refreshLog     then f._refreshLog()     end
@@ -622,6 +627,13 @@ function lib:CreateDebugConsole(opts)
   -- ============================================================================
 
   function f._buildActions(parent)
+    -- Per-tab wrapper so TabPanel can Show/Hide this tab's chrome as a unit
+    -- on tab switch. Without this, every tab's children would pile onto the
+    -- shared content frame and visibly overlap (COG-69).
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+    parent = page
+
     local pad = 8
     local btnW, btnH, gap = 240, 24, 6
     local HEADER_H = 18
@@ -737,9 +749,16 @@ function lib:CreateDebugConsole(opts)
     -- the console being hidden / re-shown. (COG-43)
     d._actionRebuilders = d._actionRebuilders or {}
     d._actionRebuilders[#d._actionRebuilders + 1] = rebuild
+
+    return page
   end
 
   function f._buildInspectors(parent)
+    -- Per-tab wrapper for tab switching (COG-69).
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+    parent = page
+
     local pad = 8
 
     local row = CreateFrame("Frame", nil, parent)
@@ -827,9 +846,16 @@ function lib:CreateDebugConsole(opts)
       listContent:SetWidth(listScroll:GetWidth())
     end
     rebuildList()
+
+    return page
   end
 
   function f._buildProfile(parent)
+    -- Per-tab wrapper for tab switching (COG-69).
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+    parent = page
+
     local pad = 8
 
     local row = CreateFrame("Frame", nil, parent)
@@ -891,9 +917,16 @@ function lib:CreateDebugConsole(opts)
       content:SetWidth(scroll:GetWidth())
     end
     f._refreshProfile()
+
+    return page
   end
 
   function f._buildLog(parent)
+    -- Per-tab wrapper for tab switching (COG-69).
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+    parent = page
+
     local pad = 8
 
     local row = CreateFrame("Frame", nil, parent)
@@ -953,6 +986,8 @@ function lib:CreateDebugConsole(opts)
       end
     end
     f._refreshLog()
+
+    return page
   end
 
   function f:RebuildActions()

@@ -2,6 +2,18 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.14.1] — 2026-05-14 — CreateDebugConsole tab-overlap hotfix (COG-69)
+
+Bumps `MINOR` from `26` to `27`. Hotfix for a developer-visible regression unmasked by v0.14.0: switching between Actions / Inspectors / Profile / Log tabs in `CreateDebugConsole` no longer hides the previous tab's chrome, so all four tabs' contents pile onto the shared content frame and overlap visibly.
+
+### Fixed
+
+- **`CreateDebugConsole` tab overlap on tab switch** (`Cogworks-1.0/Debug.lua`, MODULE_MINOR `3 → 4`, COG-69) — each of `_buildActions` / `_buildInspectors` / `_buildProfile` / `_buildLog` now wraps its chrome in a per-tab page frame and returns it, and the tab `build` thunks pass that return value through to `TabPanel`. Previously the builders added children directly to the shared content frame and returned nothing, leaving `TabPanel.tabPages[key]` nil — so `setActive` had nothing to `Hide()` on the previous tab and the chrome accumulated. Latent since v0.13.0, but masked by COG-56 (`attempt to call a nil value` on initial activation) until v0.14.0; clicking a different tab in the console now correctly swaps the visible content.
+
+### Notes
+
+- Consumer cogs should re-pin `.pkgmeta` Cogworks external to v0.14.1. Per-module guards mean a single v0.14.1 install supersedes vendored v0.14.0 `Debug.lua` copies, but every cog should still re-pin for safety.
+
 ## [0.14.0] — 2026-05-14 — Async + interaction primitives, FQ-audit feed-in
 
 Bumps `MINOR` from `19` to `26`. Eight new / extended primitives from the FlipQueue v0.13 adoption audit (FQ #143) plus two fixes — one player-visible (standalone minimap inner-glyph artwork) and one developer-visible (debug console crash on open).
