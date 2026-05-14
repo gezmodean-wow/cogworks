@@ -33,5 +33,6 @@
     <Script file="Slash.lua" />
     <Script file="Toast.lua" />
     <Script file="Loading.lua" />
+    <Script file="TaskProgress.lua" />
 
 </Ui>

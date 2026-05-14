@@ -187,6 +187,7 @@ local function createShowcase()
     { key = "drawer",   label = "Drawer",      icon = "Interface\\Buttons\\UI-MicroButton-Inventory-Up" },
     { key = "toast",    label = "Toast",       icon = "Interface\\COMMON\\Indicator-Yellow" },
     { key = "loading",  label = "Loading",     icon = "Interface\\COMMON\\StreamCircle" },
+    { key = "tasks",    label = "Task progress", icon = "Interface\\COMMON\\Indicator-Green" },
     { key = "slash",    label = "Slash",       icon = "Interface\\Buttons\\UI-MicroButton-Help-Up" },
   }
 
@@ -2823,6 +2824,169 @@ pages.loading = function(parent)
     stopFakeWork()
   end)
   hideBtn:SetPoint("TOPLEFT", dimBtn, "BOTTOMLEFT", 0, -16)
+
+  return f
+end
+
+-- ============================================================================
+-- Page: Task progress (CreateTaskProgress + CreateMultiTaskProgress)
+-- ============================================================================
+
+pages.tasks = function(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  local intro = f:CreateFontString(nil, "OVERLAY")
+  intro:SetFontObject(cw.Fonts.small)
+  intro:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  intro:SetPoint("RIGHT",   f, "RIGHT",   -12, 0)
+  intro:SetJustifyH("LEFT")
+  intro:SetWordWrap(true)
+  intro:SetTextColor(unpack(T.textDim))
+  intro:SetText("CreateTaskProgress is the dockable progress widget for long-running "
+              .. "background work (TSM CSV imports, recipe scans, period synthesis). "
+              .. "CreateMultiTaskProgress stacks per-source rows in one panel with "
+              .. "per-row state colors -- the v1 driver is Tally's multi-source import "
+              .. "controller. Distinct from cw:CreateProgressBar (the thin inline cell).")
+
+  -- ---- Single-task demo ------------------------------------------------
+  local _singleHandle
+  local _singleTicker = CreateFrame("Frame", nil, f)
+  _singleTicker:Hide()
+
+  local function stopSingleTicker()
+    _singleTicker:Hide()
+    _singleTicker:SetScript("OnUpdate", nil)
+  end
+
+  local startSingleBtn = cw:CreateButton(f, "Open single-task widget", 220, 26, function()
+    if not _singleHandle then
+      _singleHandle = cw:CreateTaskProgress(f, {
+        title      = "Importing TSM",
+        label      = "Reading csvSales",
+        total      = 0,                    -- start indeterminate (parse phase)
+        position   = { x = 400, y = 200 }, -- screen-space
+        cancelable = true,
+        onCancel   = function()
+          stopSingleTicker()
+          cw:Print("Cogworks", "single-task cancelled")
+        end,
+      })
+      _singleHandle:Pulse()
+    end
+    _singleHandle:Show()
+
+    -- Fake work: 2s parse phase (indeterminate), then ramp determinate to 90k.
+    local startTime = GetTime()
+    local total     = 90128
+    _singleHandle:Pulse()
+    _singleHandle:SetState("importing")
+    _singleHandle:SetETA("")
+    _singleHandle:SetLabel("Reading csvSales")
+    stopSingleTicker()
+    _singleTicker:SetScript("OnUpdate", function(self)
+      local elapsed = GetTime() - startTime
+      if elapsed < 2.0 then return end
+      if _singleHandle:GetTotal() == 0 then
+        _singleHandle:SetTotal(total)
+        _singleHandle:SetLabel("Reading csvSales (rows)")
+      end
+      local progress = math.min(1, (elapsed - 2.0) / 4.0)
+      local val = math.floor(progress * total)
+      _singleHandle:SetValue(val)
+      _singleHandle:SetETA(string.format("%dk / %dk", math.floor(val / 1000), math.floor(total / 1000)))
+      if progress >= 1 then
+        _singleHandle:SetState("done", string.format("%d rows imported", total))
+        _singleHandle:Complete()
+        stopSingleTicker()
+      end
+    end)
+    _singleTicker:Show()
+  end)
+  startSingleBtn:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  -- ---- Multi-task demo -------------------------------------------------
+  local _multiPanel
+  local _multiTicker = CreateFrame("Frame", nil, f)
+  _multiTicker:Hide()
+
+  local startMultiBtn = cw:CreateButton(f, "Open multi-source panel", 220, 26, function()
+    if not _multiPanel then
+      _multiPanel = cw:CreateMultiTaskProgress(f, {
+        title = "Importing from siblings",
+        rows  = {
+          { key = "tsm",         label = "TSM Accounting" },
+          { key = "flipqueue",   label = "FlipQueue" },
+          { key = "journalator", label = "Journalator" },
+        },
+        cancelable = true,
+        onCancel   = function() cw:Print("Cogworks", "multi-task cancelled") end,
+      })
+      _multiPanel:SetPoint("CENTER", UIParent, "CENTER", 0, -40)
+    end
+    _multiPanel:Show()
+
+    -- Stagger the sources to demo per-row state transitions.
+    local totals = { tsm = 47000, flipqueue = 12043, journalator = 0 }
+    local rowPlan = {
+      { key = "tsm",         delay = 0.0, dur = 4.0 },
+      { key = "flipqueue",   delay = 1.5, dur = 2.5 },
+      { key = "journalator", delay = 0.5, dur = 0.0, finalState = "skipped",
+        finalLabel = "no rows" },
+    }
+    for _, plan in ipairs(rowPlan) do
+      _multiPanel:GetRow(plan.key):SetState("queued")
+      _multiPanel:GetRow(plan.key):SetETA("queued")
+    end
+
+    local startTime = GetTime()
+    _multiTicker:Hide()
+    _multiTicker:SetScript("OnUpdate", function(self)
+      local elapsed = GetTime() - startTime
+      local allDone = true
+      for _, plan in ipairs(rowPlan) do
+        local row = _multiPanel:GetRow(plan.key)
+        if elapsed >= plan.delay then
+          if plan.dur == 0 then
+            -- One-shot transition (the journalator "skipped" case).
+            row:SetState(plan.finalState, plan.finalLabel)
+            row:SetETA("")
+          else
+            local localT = math.max(0, math.min(1, (elapsed - plan.delay) / plan.dur))
+            if row:GetState() == "queued" then
+              row:SetState("importing")
+              row:SetTotal(totals[plan.key])
+            end
+            local val = math.floor(localT * totals[plan.key])
+            row:SetValue(val)
+            row:SetETA(string.format("%d / %d", val, totals[plan.key]))
+            if localT >= 1 then
+              row:SetState("done",
+                string.format("%d imported", totals[plan.key]))
+              row:SetETA("")
+            else
+              allDone = false
+            end
+          end
+        else
+          allDone = false
+        end
+      end
+      if allDone then
+        self:Hide()
+        self:SetScript("OnUpdate", nil)
+      end
+    end)
+    _multiTicker:Show()
+  end)
+  startMultiBtn:SetPoint("TOPLEFT", startSingleBtn, "BOTTOMLEFT", 0, -8)
+
+  local hideMultiBtn = cw:CreateButton(f, "Hide multi-source panel", 220, 24, function()
+    if _multiPanel then _multiPanel:Hide() end
+    _multiTicker:Hide()
+    _multiTicker:SetScript("OnUpdate", nil)
+  end)
+  hideMultiBtn:SetPoint("TOPLEFT", startMultiBtn, "BOTTOMLEFT", 0, -8)
 
   return f
 end
