@@ -2,9 +2,17 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
-## Unreleased
+## [0.14.2] — 2026-05-14 — Appearance-tab convention (COG-71)
 
-- **`cw:CreateAppearanceTab(parent, opts)` + adoption convention** (`Cogworks-1.0/Scaling.lua`, MODULE_MINOR `2 → 3`, COG-71) — additive clear-intent alias for `CreateUIScalingSettingsBlock`. Both functions are identical; the new name names the convention: every cog's settings UI ends with an **"Appearance"** tab whose body is a single `cw:CreateAppearanceTab(parent, { cog = "MyCog" })` call. Cog-specific toggles / pickers go in **other** tabs; Appearance is reserved for the standard suite-wide primitive so future UX improvements (theme color editor, new overrides, etc.) reach every cog the day they ship. All writes flow through cogworks into `CogworksSharedDB`. Per-cog overrides for `fontScale` + `fontFamily` are scoped to `cog`; `uiScale` + theme stay suite-wide for the v0.14.x line (per-cog theme is a planned multi-release stretch — filed as a follow-up cogworks issue). Adoption tickets for Tally + FlipQueue are filed on their respective trackers. Showcase page at `/cogworks ui` → "Appearance tab" demos the canonical pattern. Bumps lib MINOR `27 → 28`.
+Bumps `MINOR` from `27` to `28`. Names the standard cogworks-managed appearance controls and the canonical adoption shape for sibling cogs. No player-visible behaviour change — additive library work for cog authors.
+
+### Added
+
+- **`cw:CreateAppearanceTab(parent, opts)` + adoption convention** (`Cogworks-1.0/Scaling.lua`, MODULE_MINOR `2 → 3`, COG-71) — additive clear-intent alias for `CreateUIScalingSettingsBlock`. Both functions are identical; the new name names the convention: every cog's settings UI ends with an **"Appearance"** tab whose body is a single `cw:CreateAppearanceTab(parent, { cog = "MyCog" })` call. Cog-specific toggles / pickers go in **other** tabs; Appearance is reserved for the standard suite-wide primitive so future UX improvements (theme color editor, new overrides, etc.) reach every cog the day they ship. All writes flow through cogworks into `CogworksSharedDB`. Per-cog overrides for `fontScale` + `fontFamily` are scoped to `cog`; `uiScale` + theme stay suite-wide for the v0.14.x line (per-cog theme is the multi-release stretch tracked in #74). Adoption tickets filed on Tally + FlipQueue trackers; showcase page at `/cogworks ui` → "Appearance tab" demos the canonical pattern.
+
+### Notes
+
+- Consumer cogs should re-pin `.pkgmeta` Cogworks external to v0.14.2 to pick up `CreateAppearanceTab`. v0.14.1 callers can use `CreateUIScalingSettingsBlock` with the same opts — the convention is identical, only the name changes.
 
 ## [0.14.1] — 2026-05-14 — CreateDebugConsole tab-overlap hotfix (COG-69)
 
