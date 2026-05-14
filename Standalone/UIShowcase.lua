@@ -2438,23 +2438,46 @@ pages.debug = function(parent)
     cw:RegisterDebugInspector(DEMO_COG, "Suite roster", function() return cw.SuiteRoster end)
     cw:RegisterDebugInspector(DEMO_COG, "Settings",     function() return cw.settings    end)
     cw:RegisterDebugInspector(DEMO_COG, "Registered addons", function() return cw:GetRegisteredAddons() end)
+    -- Old positional shape — still supported.
     cw:RegisterDebugAction(DEMO_COG, "Emit test debug log", function()
       for i = 1, 5 do cw:DebugPrint(DEMO_COG, "test line " .. i) end
     end)
-    cw:RegisterDebugAction(DEMO_COG, "Profile a sleep loop", function()
-      cw:SetDebugEnabled(DEMO_COG, true)
-      for _ = 1, 50 do
-        cw:Profile(DEMO_COG, "Math.sqrt-loop", function()
-          local s = 0
-          for i = 1, 5000 do s = s + math.sqrt(i) end
-          return s
-        end)
-      end
-      cw:DebugPrint(DEMO_COG, "Profile sample done — see Profile tab")
-    end)
-    cw:RegisterDebugAction(DEMO_COG, "Fire a LibDebug bridge event", function()
-      cw:_LibDebugPrint("hello from the lib bridge", "Showcase")
-    end)
+    -- New opts-table shape (COG-43): group, help tooltip, disabled state.
+    cw:RegisterDebugAction(DEMO_COG, {
+      group = "Profiler",
+      label = "Profile a sleep loop",
+      help  = "Runs 50 iterations of a math.sqrt loop under cw:Profile.",
+      run   = function()
+        cw:SetDebugEnabled(DEMO_COG, true)
+        for _ = 1, 50 do
+          cw:Profile(DEMO_COG, "Math.sqrt-loop", function()
+            local s = 0
+            for i = 1, 5000 do s = s + math.sqrt(i) end
+            return s
+          end)
+        end
+        cw:DebugPrint(DEMO_COG, "Profile sample done -- see Profile tab")
+      end,
+    })
+    cw:RegisterDebugAction(DEMO_COG, {
+      group = "Profiler",
+      label = "Reset profiler stats",
+      help  = "Wipes the per-label profile counters.",
+      run   = function() cw:ResetProfileStats(DEMO_COG) end,
+    })
+    cw:RegisterDebugAction(DEMO_COG, {
+      group = "Lib bridge",
+      label = "Fire a LibDebug bridge event",
+      help  = "Demonstrates that lib-side debug prints land in this cog's ring buffer.",
+      run   = function() cw:_LibDebugPrint("hello from the lib bridge", "Showcase") end,
+    })
+    cw:RegisterDebugAction(DEMO_COG, {
+      group    = "Lib bridge",
+      label    = "Dev-only action (disabled demo)",
+      help     = "Visible but unclickable -- demos the disabled state.",
+      disabled = true,
+      run      = function() cw:Print("Cogworks", "unreachable") end,
+    })
   end
 
   local intro = f:CreateFontString(nil, "OVERLAY")

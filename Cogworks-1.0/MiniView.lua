@@ -13,6 +13,14 @@
 -- The caller's SavedVariables-backed db owns the table; Cogworks just
 -- reads / writes its keys.
 --
+-- `opts.persistKeys` is an optional whitelist of which geometry keys to
+-- read+write from savedvars. Omitted or nil = persist everything (the
+-- v0.13.x default). Pass a subset like `{ "x", "y", "width", "height" }`
+-- to keep position persistent across sessions but leave `pinned` (or any
+-- future state key) session-only — useful for cogs whose collapsed/pinned
+-- state should default fresh on each login. Keys outside the list are
+-- never written and read the in-memory defaults on Show. (COG-41)
+--
 -- Usage:
 --
 --   local mini = cw:CreateMiniView({
@@ -22,6 +30,7 @@
 --     minWidth  = 150, minHeight = 80,
 --     maxWidth  = 600, maxHeight = 400,
 --     savedvars = FlipQueueDB.miniView or {}, -- mutated in place
+--     persistKeys = { "x", "y", "width", "height" },  -- optional whitelist
 --     onClose   = function() FlipQueueDB.miniView.shown = false end,
 --     onPin     = function(pinned) ... end,
 --   })
@@ -41,7 +50,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 16
+local MODULE_MINOR = 17
 lib._modules = lib._modules or {}
 if (lib._modules.MiniView or 0) >= MODULE_MINOR then return end
 lib._modules.MiniView = MODULE_MINOR
@@ -57,24 +66,27 @@ local DEFAULT_MAX_H  = 800
 
 -- Persist current position + size into savedvars. Position is stored as
 -- a screen-space (x, y) anchored to UIParent BOTTOMLEFT so the values
--- survive UI scale changes.
-local function savePosSize(frame, savedvars)
+-- survive UI scale changes. `shouldPersist(key)` gates each write so
+-- opts.persistKeys can opt individual keys out of persistence.
+local function savePosSize(frame, savedvars, shouldPersist)
   local x, y = frame:GetLeft(), frame:GetBottom()
   if x and y then
-    savedvars.x = x
-    savedvars.y = y
+    if shouldPersist("x") then savedvars.x = x end
+    if shouldPersist("y") then savedvars.y = y end
   end
-  savedvars.width  = frame:GetWidth()
-  savedvars.height = frame:GetHeight()
+  if shouldPersist("width")  then savedvars.width  = frame:GetWidth()  end
+  if shouldPersist("height") then savedvars.height = frame:GetHeight() end
 end
 
-local function restorePosSize(frame, savedvars, defaults)
-  local w = savedvars.width  or defaults.width
-  local h = savedvars.height or defaults.height
+local function restorePosSize(frame, savedvars, defaults, shouldPersist)
+  local w = (shouldPersist("width")  and savedvars.width)  or defaults.width
+  local h = (shouldPersist("height") and savedvars.height) or defaults.height
   frame:SetSize(w, h)
-  if savedvars.x and savedvars.y then
+  local x = shouldPersist("x") and savedvars.x
+  local y = shouldPersist("y") and savedvars.y
+  if x and y then
     frame:ClearAllPoints()
-    frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", savedvars.x, savedvars.y)
+    frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
   else
     frame:ClearAllPoints()
     frame:SetPoint("CENTER")
@@ -87,6 +99,18 @@ function lib:CreateMiniView(opts)
   assert(type(opts.savedvars) == "table", "CreateMiniView: opts.savedvars table required")
   local T = self.Theme
   local sv = opts.savedvars
+
+  -- Geometry-key persistence whitelist. nil = persist everything (the
+  -- v0.13.x default); otherwise listed keys are read+written, the rest
+  -- are session-only and use defaults on Show. (COG-41)
+  local persistSet
+  if type(opts.persistKeys) == "table" then
+    persistSet = {}
+    for _, k in ipairs(opts.persistKeys) do persistSet[k] = true end
+  end
+  local function shouldPersist(key)
+    return persistSet == nil or persistSet[key] == true
+  end
 
   local minW = opts.minWidth  or DEFAULT_MIN_W
   local minH = opts.minHeight or DEFAULT_MIN_H
@@ -164,7 +188,7 @@ function lib:CreateMiniView(opts)
   grip:SetScript("OnDragStart", function() frame:StartSizing("BOTTOMRIGHT") end)
   grip:SetScript("OnDragStop", function()
     frame:StopMovingOrSizing()
-    savePosSize(frame, sv)
+    savePosSize(frame, sv, shouldPersist)
   end)
 
   -- ---- Content area ------------------------------------------------------
@@ -174,7 +198,7 @@ function lib:CreateMiniView(opts)
   frame.content = content
 
   -- ---- Pin behaviour -----------------------------------------------------
-  local pinned = sv.pinned and true or false
+  local pinned = (shouldPersist("pinned") and sv.pinned) and true or false
 
   local function applyPinVisual()
     if pinned then
@@ -192,7 +216,7 @@ function lib:CreateMiniView(opts)
 
   function frame:SetPinned(b)
     pinned = b and true or false
-    sv.pinned = pinned
+    if shouldPersist("pinned") then sv.pinned = pinned end
     applyPinVisual()
     if opts.onPin then opts.onPin(pinned) end
   end
@@ -211,7 +235,7 @@ function lib:CreateMiniView(opts)
   titleBar:SetScript("OnDragStart", function() if not pinned then frame:StartMoving() end end)
   titleBar:SetScript("OnDragStop", function()
     frame:StopMovingOrSizing()
-    savePosSize(frame, sv)
+    savePosSize(frame, sv, shouldPersist)
   end)
 
   -- ---- UI scale awareness ------------------------------------------------
@@ -235,10 +259,10 @@ function lib:CreateMiniView(opts)
   hooksecurefunc(frame, "Show", function()
     -- Show is hooked, not overridden — original behaviour runs first.
     -- restorePosSize is a no-op the second time (anchors stay) but harmless.
-    restorePosSize(frame, sv, defaults)
+    restorePosSize(frame, sv, defaults, shouldPersist)
   end)
   -- Initial restore so first Show by the caller honours saved geometry.
-  restorePosSize(frame, sv, defaults)
+  restorePosSize(frame, sv, defaults, shouldPersist)
 
   return frame
 end
