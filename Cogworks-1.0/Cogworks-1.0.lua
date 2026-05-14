@@ -35,7 +35,7 @@ lib.loaderAddon = lib.loaderAddon or LIB_LOADER_ADDON
 -- Version
 -- ============================================================================
 
-lib.version      = "0.13.2"  -- human-facing semver of the Cogworks suite
+lib.version      = "0.14.0"  -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
