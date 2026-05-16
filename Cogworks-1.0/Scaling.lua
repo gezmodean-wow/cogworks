@@ -56,7 +56,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 3
+local MODULE_MINOR = 4
 lib._modules = lib._modules or {}
 if (lib._modules.Scaling or 0) >= MODULE_MINOR then return end
 lib._modules.Scaling = MODULE_MINOR
@@ -529,13 +529,24 @@ function lib:CreateUIScalingSettingsBlock(parent, opts)
   return block
 end
 
--- Preferred entry point. Identical to CreateUIScalingSettingsBlock; the name
--- makes the convention from the top-of-file comment unambiguous at call sites
--- (`local appearance = cw:CreateAppearanceTab(content, { cog = "MyCog" })`).
+-- Preferred entry point for the Appearance-tab convention. Builds the same
+-- controls as CreateUIScalingSettingsBlock, but returns a block already
+-- anchored to fill `parent` — so it works as a one-call TabPanel `build`
+-- body without the caller needing a follow-up SetPoint.
+--
+-- CreateUIScalingSettingsBlock itself returns an *unanchored* block (its
+-- contract is "caller positions it"). TabPanel only Show/Hides the frame a
+-- `build` returns — it never anchors it — so handing the raw unanchored
+-- block to a tab renders an empty tab (COG-75). This wrapper closes that gap.
+--
 -- See the Appearance-tab convention block above for the standard adoption
 -- shape (dedicated last tab in the cog's settings TabPanel). (COG-71)
 function lib:CreateAppearanceTab(parent, opts)
-  return self:CreateUIScalingSettingsBlock(parent, opts)
+  local block = self:CreateUIScalingSettingsBlock(parent, opts)
+  block:ClearAllPoints()
+  block:SetPoint("TOPLEFT",  parent, "TOPLEFT",  0, 0)
+  block:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+  return block
 end
 
 -- ============================================================================
