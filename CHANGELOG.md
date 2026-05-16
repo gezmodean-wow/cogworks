@@ -2,6 +2,18 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.14.3] — 2026-05-15 — CreateAppearanceTab empty-tab hotfix (COG-75)
+
+Bumps `MINOR` from `28` to `29`. Hotfix for the COG-71 primitive shipped in v0.14.2: `cw:CreateAppearanceTab` rendered a visible tab with no controls inside it.
+
+### Fixed
+
+- **`CreateAppearanceTab` renders an empty tab** (`Cogworks-1.0/Scaling.lua`, MODULE_MINOR `3 → 4`, COG-75) — `CreateUIScalingSettingsBlock` creates its `block` frame with `SetSize` but no `SetPoint` (its contract is "caller positions it"). `CreateAppearanceTab` returned that unanchored block straight to `TabPanel`, which only `Show`/`Hide`s the page frame a `build` returns — it never anchors it. With no anchor the block had no valid rect, so it and all its controls (profile dropdown, sliders, theme picker, reset) rendered nowhere visible. `CreateAppearanceTab` now anchors the block `TOPLEFT` + `TOPRIGHT` to its parent before returning, so the convention's one-call tab body works. `CreateUIScalingSettingsBlock` keeps its existing "caller positions it" contract (zero direct adopters — no behaviour change).
+
+### Notes
+
+- Consumer cogs should re-pin `.pkgmeta` Cogworks external to v0.14.3. No cog had adopted `CreateAppearanceTab` yet, so no player saw a broken settings tab — this lands the fix ahead of the first consumer migration (Tally, `gezmodean-wow/tally#72`).
+
 ## [0.14.2] — 2026-05-14 — Appearance-tab convention (COG-71)
 
 Bumps `MINOR` from `27` to `28`. Names the standard cogworks-managed appearance controls and the canonical adoption shape for sibling cogs. No player-visible behaviour change — additive library work for cog authors.
