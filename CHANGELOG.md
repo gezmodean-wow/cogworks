@@ -2,6 +2,23 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.15.0] — 2026-05-17 — Appearance editor: full theme/font editor (COG-73)
+
+Bumps `MINOR` from `29` to `30`. Rewrites the Appearance primitive shipped in v0.14.2–v0.14.3 from a thin control block into a full scrolling theme/font editor, so every cog adopting `cw:CreateAppearanceTab` gets the complete editor for free.
+
+### Changed
+
+- **`CreateUIScalingSettingsBlock` rewritten into a full Appearance editor** (`Cogworks-1.0/Scaling.lua`, MODULE_MINOR `4 → 5`, COG-73) — the primitive was a short stack of controls (profile dropdown, two sliders, theme picker, reset). It is now a self-anchored `ScrollFrame` whose scroll-child is built top-down: optional description, a **live preview panel** (miniature sample UI that repaints on every theme/color edit), profile row (dropdown + New / Export / Import), per-cog override row (when `opts.cog` is set), font-scale + UI-scale sliders, font-family dropdown with per-key font preview rows, theme dropdown, grouped **editable color swatches** (click a swatch → `ColorPickerFrame`), Save as Custom / Export Theme / Import Theme, and Reset. An internal `refreshAll()` repaints swatches + preview and is wired to `SettingsChanged`, so edits made elsewhere (another page, a preset switch) reflect live.
+- **Return type: unanchored `Frame` → self-anchored `ScrollFrame`.** The block now anchors itself to fill `parent`. Direct callers that positioned the old block themselves should `ClearAllPoints()` first if they still need custom placement (there are no such adopters in-suite). Back-compat handles on the returned frame are preserved — `.profileDropdown`, `.fontSlider`, `.uiSlider`, `.familyDropdown`, `.themeDropdown`, `.resetButton` — plus a new `.Refresh`.
+- **`CreateAppearanceTab` is now a pure pass-through alias.** Because the editor self-anchors, the manual `TOPLEFT`/`TOPRIGHT` anchoring added in v0.14.3 (COG-75) is no longer needed and has been removed; `CreateAppearanceTab(parent, opts)` simply returns `CreateUIScalingSettingsBlock(parent, opts)`.
+- **`opts` flags** — `showFontFamily` (default `true`) gates the font-family dropdown + font preview rows; `showTheme` (default `true`) gates the theme dropdown + color editor + save/share; `description` renders header copy; `cog` renders the per-cog override row.
+
+### Notes
+
+- Standalone showcase: the **Theme** and **Settings** pages (`Standalone/UIShowcase.lua`) are now thin demos of the one editor primitive — ~500 lines of hand-rolled duplicate demo code removed. Theme passes `{ showFontFamily = false }`, Settings passes `{ showTheme = false }`, and the Appearance-tab page demos the unflagged full editor inside a `TabPanel`.
+- Consumer cogs should re-pin `.pkgmeta` Cogworks external to v0.15.0. This is the bulk of the COG-71 Appearance Phase 2 work (cogworks #73) and should land before the first consumer migration (Tally, `gezmodean-wow/tally#72`).
+- No player-visible change in the standalone addon; the editor reaches players only through sibling cogs that adopt `CreateAppearanceTab`.
+
 ## [0.14.3] — 2026-05-15 — CreateAppearanceTab empty-tab hotfix (COG-75)
 
 Bumps `MINOR` from `28` to `29`. Hotfix for the COG-71 primitive shipped in v0.14.2: `cw:CreateAppearanceTab` rendered a visible tab with no controls inside it.
