@@ -69,21 +69,23 @@ When the user mentions a bug, regression, feature idea, or improvement during no
 
 Commit messages referencing a tracked issue should use `<type>(<ID>): <subject>` — e.g. `fix(COG-004): guard RegisterAddon against nil namespace`.
 
-### Player-facing standards (canonical source)
+## Standards acknowledgments
 
-Conventions for `## Player summary` (issue body), `## Player update` (issue comments), and player-facing release copy live in the SCRIBE repo. This file is the single source of truth — do not restate the rules here.
+Suite standards are canonicalized in `cogworks/runbooks/` (this repo hosts the runbook set) plus the `shared/` file pool. Each session, check the top `## Standards changelog` entry of each source against the codes below. If any is newer, prefix your first response with `Standards updated:` plus a one-line summary per new entry, then update the code here as part of the session's commit.
 
-**Required:** `WebFetch` the canonical doc before any of the following:
+Player-facing conventions (`## Player summary` in issue bodies, `## Player update` in comments, player-facing release/changelog copy) live in `comms-conventions.md` — the canonical source (migrated from scribe's `PLAYER_FACING_CONVENTIONS.md`). Re-read it before closing a player-visible issue, writing a comment that wants a player response, or tagging a release / writing a `CHANGELOG.md` entry.
 
-- Closing a player-visible issue
-- Writing a GitHub comment that wants a player response
-- Tagging a release or writing a `CHANGELOG.md` entry
+| Source | Last acknowledged |
+|---|---|
+| [comms conventions](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/comms-conventions.md) | 2026-05-05a |
+| [branch & release flow](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/branch-and-release-flow.md) | 2026-05-06a |
+| [doc conventions](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/doc-conventions.md) | 2026-05-05a |
+| [technical standards](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/technical-standards.md) | 2026-05-05a |
+| [shared/ file pool](https://github.com/gezmodean-wow/cogworks/blob/main/shared/VERSION) | 2026-05-07a — `bash shared/scripts/sync-standards.sh check` |
+| [standards-sync (this mechanism)](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/standards-sync.md) | 2026-06-27a |
+| [cross-repo coordination](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/cross-repo-coordination.md) | 2026-05-07a |
 
-URL: https://raw.githubusercontent.com/gezmodean-wow/scribe/main/docs/PLAYER_FACING_CONVENTIONS.md
-
-The doc has a `## Changelog` section at the top. Compare its most recent entry code to the line below. If newer entries exist, prefix your first response with `Standards updated:` plus a one-line summary of each new entry, then update the code below in this file.
-
-**Last acknowledged:** 2026-04-30f
+The `roadmap & version broadcast` row joins this table when that runbook migrates here under CF-9 (cogworks#47).
 
 ## Release artifacts: single changelog
 
@@ -91,11 +93,27 @@ Cogworks is a shared library; its CurseForge / Wago audience is sibling-cog auth
 
 If a future Cogworks release contains anything truly player-facing (e.g. a user-visible standalone setting), call it out in plain language at the top of the relevant section — don't split files for it.
 
-## Cross-cog feature requests
+## Coordinator (chronoforge)
 
-Cogworks is a shared library, so it's the **most common target** for cross-cog asks: when an agent working in FlipQueue / Tempo / Maxcraft / Tally spots a gap they need filled here, they file an Issue on `gezmodean-wow/cogworks` and mention their cog as the source. Triage those as cross-cog asks — they're a real signal that a library capability is missing.
+Suite-wide coordination — runbook drafting, audits, multi-cog initiatives, cross-cog bug diagnosis — happens in `gezmodean-wow/chronoforge` (issue prefix `CF-N`). Cross-repo work routed *to* cogworks from chronoforge or a consumer cog lands as a GitHub issue with the `cross-repo-inbound` label.
 
-The reverse direction also applies: if you spot a gap in a sibling cog while working here in Cogworks, file a GitHub Issue on that cog's tracker via `gh issue create --repo gezmodean-wow/<target-cog>`, mentioning Cogworks as the source. Scribe mirrors all such issues to the target cog's Discord forum.
+**Session-start pre-flight:** after the standards-acknowledgments check, run:
+
+```bash
+gh issue list --label cross-repo-inbound --state open --repo gezmodean-wow/cogworks
+```
+
+If non-empty, surface inbound tickets to the user before proceeding to their task. If empty, proceed silently. Don't read or modify chronoforge from here — it's the coordinator's repo, not part of cogworks's scope.
+
+## Cross-cog work
+
+Cogworks is the **shared library**, so cross-cog work is part of the job:
+
+- **Inbound asks from consumers** (`cross-repo-inbound`, `from-<cog>`) → triage as a real signal that a library capability is missing. Promote to a milestone if the work is committed.
+- **Outbound generalizations** → cogworks has read access on all consumer cogs. Survey for repeated patterns; file `library-generalization-candidate` issues on cogworks with consumer code samples that motivated them. When library work ships, fan out per-consumer adoption tickets per the `library-bump-propagation` runbook.
+- **Outbound asks to consumers** → file a `cross-repo-inbound` + `from-cogworks` issue on the relevant consumer repo.
+
+Per the access model (`runbooks/cross-repo-coordination.md`), cogworks is one of the two repos with privileged cross-repo reach (the other is chronoforge). Use it.
 
 ## When adding new library features
 

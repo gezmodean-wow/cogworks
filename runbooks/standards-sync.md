@@ -5,6 +5,7 @@ How standards changes (runbooks, comms conventions, shared/ file pool) flow from
 
 ## Standards changelog
 
+- **2026-06-27a** — Added `cross-repo-coordination.md` to the tracked sources (migrated from chronoforge into `cogworks/runbooks/` under COG-42 / CF-10).
 - **2026-05-05a** — Initial codification. Generalizes scribe's "Last acknowledged" mechanism to cover all standards sources (runbooks, scribe comms doc, cogworks shared/ file pool).
 
 ## The mental model
@@ -29,6 +30,7 @@ This is **the same mechanism scribe already uses** for `PLAYER_FACING_CONVENTION
 | Technical standards | Convention | `cogworks/runbooks/technical-standards.md` § Standards changelog | Cog `CLAUDE.md` |
 | Shared file pool | Files | `cogworks/shared/VERSION` | Cog `CLAUDE.md` (entry name `shared/`) |
 | Standards-sync (this runbook) | Convention | This file § Standards changelog | Cog `CLAUDE.md` |
+| Cross-repo coordination | Convention | `cogworks/runbooks/cross-repo-coordination.md` § Standards changelog | Cog `CLAUDE.md` |
 
 Convention sources are agent-applied behaviorally — the agent reads the new entries and changes its behavior accordingly. The file-pool source is automated by `scripts/sync-standards.sh` (vendored from cogworks).
 
