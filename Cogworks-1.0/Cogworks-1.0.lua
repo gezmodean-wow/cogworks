@@ -25,7 +25,7 @@ assert(LibStub:GetLibrary("CallbackHandler-1.0", true), "Cogworks-1.0 requires C
 -- because every consumer ships the same external, the path resolves either way.
 local LIB_LOADER_ADDON = ...
 
-local MAJOR, MINOR = "Cogworks-1.0", 30
+local MAJOR, MINOR = "Cogworks-1.0", 31
 local lib, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end  -- already loaded at this version or newer
 oldminor = oldminor or 0
@@ -35,7 +35,7 @@ lib.loaderAddon = lib.loaderAddon or LIB_LOADER_ADDON
 -- Version
 -- ============================================================================
 
-lib.version      = "0.15.0"  -- human-facing semver of the Cogworks suite
+lib.version      = "0.16.0"  -- human-facing semver of the Cogworks suite
 lib.minorVersion = MINOR     -- LibStub minor; bumps on any API addition
 
 -- ============================================================================
@@ -1661,15 +1661,24 @@ end
 -- onChange(key, label) fires when the user picks a new value.
 
 -- opts (5th arg, optional) — extends the legacy positional signature additively.
---   opts.width      — explicit fixed width (overrides autoWidth)
---   opts.autoWidth  — when true, fits the dropdown to the widest item label
---                     (clamped by minWidth / maxWidth) and re-fits on SetItems
---                     and on fontScale / fontFamily change
---   opts.minWidth   — auto-width floor (default 80)
---   opts.maxWidth   — auto-width ceiling (default 600)
+--   opts.width       — explicit fixed width (overrides autoWidth)
+--   opts.autoWidth   — when true, fits the dropdown to the widest item label
+--                      (clamped by minWidth / maxWidth) and re-fits on SetItems
+--                      and on fontScale / fontFamily change
+--   opts.minWidth    — auto-width floor (default 80)
+--   opts.maxWidth    — auto-width ceiling (default 600)
+--   opts.itemBuilder — function(rowFrame, item, isSelected) for custom menu rows
+--                      (COG-45). Called once per row when its bound item changes;
+--                      populate rowFrame however you like (multi-line, sublabel,
+--                      right-aligned badge). The lib still owns selection paint +
+--                      the row click handler, so use non-mouse regions (font
+--                      strings / textures) so clicks fall through to the row.
+--                      Omitted → default flat-label rendering (unchanged). With a
+--                      builder, set `item.width` so auto-width can measure rows.
 function lib:CreateDropdown(parent, items, selectedKey, onChange, opts)
   opts = opts or {}
   local T = self.Theme
+  local itemBuilder = opts.itemBuilder
   local dd = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   local explicitWidth = opts.width
   local autoWidth     = opts.autoWidth and not explicitWidth
@@ -1760,9 +1769,14 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange, opts)
     end
     local maxW = 0
     for _, item in ipairs(dd._items) do
-      _measureFs:SetFontObject(getItemFontObject(item))
-      _measureFs:SetText(item.label or "")
-      local w = _measureFs:GetStringWidth()
+      local w
+      if itemBuilder and item.width then
+        w = item.width  -- custom rows report their own width hint
+      else
+        _measureFs:SetFontObject(getItemFontObject(item))
+        _measureFs:SetText(item.label or "")
+        w = _measureFs:GetStringWidth()
+      end
       if w > maxW then maxW = w end
     end
     -- 8 left inset + 20 right arrow gutter, plus a bit of breathing room
@@ -1806,23 +1820,54 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange, opts)
         row.bg = row:CreateTexture(nil, "BACKGROUND")
         row.bg:SetAllPoints()
         row.bg:SetColorTexture(1, 1, 1, 0)
-        row.label = row:CreateFontString(nil, "OVERLAY")
-        row.label:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        row.label:SetJustifyH("LEFT")
-        row.label:SetWordWrap(false)
+        if itemBuilder then
+          -- Custom-row host. Builder content lands here; selection + click stay
+          -- lib-owned via row.bg + the row button's OnClick.
+          row.builderHost = CreateFrame("Frame", nil, row)
+          row.builderHost:SetPoint("TOPLEFT", row, "TOPLEFT", 6, 0)
+          row.builderHost:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -6, 0)
+        else
+          row.label = row:CreateFontString(nil, "OVERLAY")
+          row.label:SetPoint("LEFT", row, "LEFT", 6, 0)
+          row.label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+          row.label:SetJustifyH("LEFT")
+          row.label:SetWordWrap(false)
+        end
+        -- Resting paint (mouse not over): a faint gold wash marks the selected
+        -- custom row, since custom rows have no lib-painted gold label.
+        local function rest(r)
+          if itemBuilder and r._selected then
+            r.bg:SetColorTexture(T.gold[1], T.gold[2], T.gold[3], 0.14)
+          else
+            r.bg:SetColorTexture(1, 1, 1, 0)
+          end
+        end
+        row._rest = rest
         row:SetScript("OnEnter", function(r) r.bg:SetColorTexture(unpack(T.rowHover)) end)
-        row:SetScript("OnLeave", function(r) r.bg:SetColorTexture(1, 1, 1, 0) end)
+        row:SetScript("OnLeave", function(r) r._rest(r) end)
         menuRows[i] = row
       end
       row:SetPoint("TOPLEFT", menuContent, "TOPLEFT", 0, -(i-1) * itemH)
       row:SetPoint("RIGHT", menuContent, "RIGHT", 0, 0)
-      row.label:SetFontObject(getItemFontObject(item))
-      row.label:SetText(item.label)
-      if item.key == dd._selectedKey then
-        row.label:SetTextColor(T.gold[1], T.gold[2], T.gold[3])
+      row._selected = (item.key == dd._selectedKey)
+      if itemBuilder then
+        -- Rebuild custom content only when the bound item changes — keeps repeat
+        -- opens free of work and avoids accumulating builder widgets.
+        if row._builtKey ~= item.key then
+          for _, c in ipairs({ row.builderHost:GetChildren() }) do c:Hide(); c:SetParent(nil) end
+          for _, rg in ipairs({ row.builderHost:GetRegions() }) do rg:Hide() end
+          itemBuilder(row.builderHost, item, row._selected)
+          row._builtKey = item.key
+        end
+        row._rest(row)
       else
-        row.label:SetTextColor(unpack(T.text))
+        row.label:SetFontObject(getItemFontObject(item))
+        row.label:SetText(item.label)
+        if row._selected then
+          row.label:SetTextColor(T.gold[1], T.gold[2], T.gold[3])
+        else
+          row.label:SetTextColor(unpack(T.text))
+        end
       end
       row:SetScript("OnClick", function()
         dd._selectedKey = item.key
@@ -1871,6 +1916,10 @@ function lib:CreateDropdown(parent, items, selectedKey, onChange, opts)
 
   function dd:SetItems(newItems)
     dd._items = newItems
+    if itemBuilder then
+      -- Force custom rows to rebuild against the new item set on next open.
+      for _, row in ipairs(menuRows) do row._builtKey = nil end
+    end
     updateLabel()
     applyAutoWidth()
   end
@@ -1908,11 +1957,22 @@ end
 --
 -- Usage:
 --   local tbl = cw:CreateScrollTable(parent, {
---     { key="name", label="Name", width=150, sortable=true },
+--     { key="name", label="Name", width=150, sortable=true, minWidth=60 },
 --     { key="gold", label="Gold", width=80, align="RIGHT", format=function(v) ... end },
 --   })
 --   tbl:SetData(rows)
 --   tbl:SetOnRowClick(function(rowData, button, index) ... end)
+--
+-- Optional 3rd arg `opts` (COG-46 / COG-52) — all additive; omit for the
+-- v0.13.x behavior (resize-only, fit-to-frame, no row actions):
+--   allowReorder     bool  — drag column headers to reorder
+--   horizontalScroll bool  — SHIFT+wheel scrolls when columns overflow the view
+--   saveLayoutTo     table — persisted { [colKey] = { width, order } }, applied
+--                            on construction and written on resize / reorder
+--   onLayoutChange   fn(layout) — fired after a resize / reorder commit
+--   rowActions       array — inline per-row buttons, hover-revealed:
+--                            { { icon, tooltip, onClick(rowData), visible(rowData) }, ... }
+-- Also: tbl:EnableRowActions(defs) to set/replace row actions after creation.
 
 local ST_ROW_HEIGHT   = 20
 local ST_HEADER_HEIGHT = 22
@@ -1920,7 +1980,8 @@ local ST_COL_PADDING   = 4
 
 local ScrollTableMixin = {}
 
-function ScrollTableMixin:Init(parent, columns)
+function ScrollTableMixin:Init(parent, columns, opts)
+  opts = opts or {}
   self.columns = columns
   self.data = {}
   self.sortKey = nil
@@ -1931,33 +1992,89 @@ function ScrollTableMixin:Init(parent, columns)
   self.resizeHandles = {}
   self.container = parent
 
+  -- Optional layout features (COG-46 / COG-52). All additive — omitting opts
+  -- keeps the v0.13.x behavior (resize-only, fit-to-frame, no row actions).
+  self.allowReorder     = opts.allowReorder
+  self.horizontalScroll = opts.horizontalScroll
+  self.saveLayoutTo     = opts.saveLayoutTo
+  self.onLayoutChange   = opts.onLayoutChange
+  self.rowActions       = opts.rowActions
+  self._hOff            = 0
+
+  -- Restore persisted widths + order before the header is built.
+  self:ApplySavedLayout()
+
   self:BuildHeader(parent)
   self:BuildScrollArea(parent)
 end
 
+-- Sum of all column widths (the table's natural width before fit-to-frame).
+function ScrollTableMixin:TotalColumnsWidth()
+  local w = 0
+  for _, c in ipairs(self.columns) do w = w + (c.width or 0) end
+  return w
+end
+
+-- True when horizontal scrolling is enabled AND the columns overflow the view.
+function ScrollTableMixin:IsHScrolling()
+  if not self.horizontalScroll or not self.scrollFrame then return false end
+  return self:TotalColumnsWidth() > self.scrollFrame:GetWidth() + 0.5
+end
+
+-- Apply persisted { [colKey] = { width, order } } onto self.columns.
+function ScrollTableMixin:ApplySavedLayout()
+  local layout = self.saveLayoutTo
+  if not layout then return end
+  for _, col in ipairs(self.columns) do
+    local L = layout[col.key]
+    if L and L.width and (not col.minWidth or L.width >= col.minWidth) then
+      col.width = L.width
+    end
+  end
+  local function ord(c) local L = layout[c.key]; return (L and L.order) or 1e9 end
+  table.sort(self.columns, function(a, b) return ord(a) < ord(b) end)
+end
+
+-- Persist current widths + order back into saveLayoutTo and notify the caller.
+function ScrollTableMixin:CommitLayout()
+  if self.saveLayoutTo then
+    for i, col in ipairs(self.columns) do
+      local L = self.saveLayoutTo[col.key]
+      if not L then L = {}; self.saveLayoutTo[col.key] = L end
+      L.width = col.width
+      L.order = i
+    end
+  end
+  if self.onLayoutChange then self.onLayoutChange(self.saveLayoutTo) end
+end
+
 function ScrollTableMixin:BuildHeader(parent)
   local T = lib.Theme
-  self.headerFrame = CreateFrame("Frame", nil, parent)
-  self.headerFrame:SetHeight(ST_HEADER_HEIGHT)
-  self.headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-  self.headerFrame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+  if not self.headerFrame then
+    self.headerFrame = CreateFrame("Frame", nil, parent)
+    self.headerFrame:SetHeight(ST_HEADER_HEIGHT)
+    self.headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    self.headerFrame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+    self.headerFrame:SetClipsChildren(true)  -- clip columns that scroll out of view
 
-  local bg = self.headerFrame:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(unpack(T.header))
+    local bg = self.headerFrame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(unpack(T.header))
 
-  local border = self.headerFrame:CreateTexture(nil, "BORDER")
-  border:SetHeight(1)
-  border:SetPoint("BOTTOMLEFT"); border:SetPoint("BOTTOMRIGHT")
-  border:SetColorTexture(T.border[1], T.border[2], T.border[3], 1)
+    local border = self.headerFrame:CreateTexture(nil, "BORDER")
+    border:SetHeight(1)
+    border:SetPoint("BOTTOMLEFT"); border:SetPoint("BOTTOMRIGHT")
+    border:SetColorTexture(T.border[1], T.border[2], T.border[3], 1)
+  else
+    -- Rebuild (e.g. after a reorder): drop the old per-column buttons.
+    for _, b in ipairs(self.headerButtons) do b:Hide(); b:SetParent(nil) end
+    wipe(self.headerButtons)
+  end
 
-  local xOff = 0
   for i, col in ipairs(self.columns) do
     local btn = CreateFrame("Button", nil, self.headerFrame)
     btn:SetHeight(ST_HEADER_HEIGHT)
     btn:SetWidth(col.width)
-    btn:SetPoint("LEFT", self.headerFrame, "LEFT", xOff, 0)
-    if i == #self.columns then btn:SetPoint("RIGHT", self.headerFrame, "RIGHT", 0, 0) end
 
     btn.label = btn:CreateFontString(nil, "OVERLAY")
     btn.label:SetFontObject(lib.Fonts.small)
@@ -1991,11 +2108,20 @@ function ScrollTableMixin:BuildHeader(parent)
       end)
     end
 
+    -- Drag-to-reorder (COG-46). A drag gesture (not a plain click) on the
+    -- header picks the column up; dropping over another header re-orders.
+    if self.allowReorder then
+      local tbl = self
+      local colIdx = i
+      btn:RegisterForDrag("LeftButton")
+      btn:SetScript("OnDragStart", function(b) tbl:_BeginColumnDrag(colIdx, b) end)
+      btn:SetScript("OnDragStop",  function()  tbl:_EndColumnDrag()        end)
+    end
+
     self.headerButtons[i] = btn
-    xOff = xOff + col.width
   end
 
-  -- Column resize handles
+  -- Column resize handles (one between each adjacent pair).
   for _, h in ipairs(self.resizeHandles) do h:Hide() end
   for i = 1, #self.columns - 1 do
     local handle = self.resizeHandles[i]
@@ -2008,8 +2134,6 @@ function ScrollTableMixin:BuildHeader(parent)
       self.resizeHandles[i] = handle
     end
     handle:SetHeight(ST_HEADER_HEIGHT)
-    handle:ClearAllPoints()
-    handle:SetPoint("LEFT", self.headerButtons[i], "RIGHT", -3, 0)
     handle:SetFrameLevel(self.headerFrame:GetFrameLevel() + 2)
     handle:Show()
 
@@ -2026,33 +2150,24 @@ function ScrollTableMixin:BuildHeader(parent)
       h._startX = GetCursorPosition() / UIParent:GetEffectiveScale()
       h._startW1 = tbl.columns[colIdx].width
       h._startW2 = tbl.columns[colIdx + 1].width
+      local min1 = tbl.columns[colIdx].minWidth or 30
+      local min2 = tbl.columns[colIdx + 1].minWidth or 30
       h.tex:SetColorTexture(1, 0.82, 0, 0.6)
       h:SetScript("OnUpdate", function()
         local curX = GetCursorPosition() / UIParent:GetEffectiveScale()
         local delta = curX - h._startX
-        local nw1 = math.max(30, h._startW1 + delta)
-        local nw2 = math.max(30, h._startW2 - delta)
-        if nw1 >= 30 and nw2 >= 30 then
+        local nw1 = math.max(min1, h._startW1 + delta)
+        local nw2 = math.max(min2, h._startW2 - delta)
+        -- When horizontal scrolling is on, columns keep their own widths
+        -- (overflow scrolls) so we don't need to steal width from the
+        -- neighbor; otherwise resizing is zero-sum to stay fit-to-frame.
+        if tbl.horizontalScroll then
+          tbl.columns[colIdx].width = nw1
+        elseif nw1 >= min1 and nw2 >= min2 then
           tbl.columns[colIdx].width = nw1
           tbl.columns[colIdx + 1].width = nw2
-          local x = 0
-          for j, c in ipairs(tbl.columns) do
-            tbl.headerButtons[j]:ClearAllPoints()
-            tbl.headerButtons[j]:SetPoint("LEFT", tbl.headerFrame, "LEFT", x, 0)
-            if j == #tbl.columns then
-              tbl.headerButtons[j]:SetPoint("RIGHT", tbl.headerFrame, "RIGHT", 0, 0)
-            else
-              tbl.headerButtons[j]:SetWidth(c.width)
-            end
-            x = x + c.width
-          end
-          for j = 1, #tbl.columns - 1 do
-            if tbl.resizeHandles[j] then
-              tbl.resizeHandles[j]:ClearAllPoints()
-              tbl.resizeHandles[j]:SetPoint("LEFT", tbl.headerButtons[j], "RIGHT", -3, 0)
-            end
-          end
         end
+        tbl:RelayoutColumns()
       end)
     end)
     handle:SetScript("OnMouseUp", function(h)
@@ -2062,8 +2177,102 @@ function ScrollTableMixin:BuildHeader(parent)
       for _, row in ipairs(tbl.rows) do row:Hide(); row:SetParent(nil) end
       wipe(tbl.rows)
       tbl:Render()
+      tbl:CommitLayout()
     end)
   end
+
+  self:RelayoutColumns()
+end
+
+-- Position header buttons + resize handles from current column widths/order,
+-- honoring the horizontal-scroll offset. Single source of truth so resize,
+-- reorder, and h-scroll all stay consistent.
+function ScrollTableMixin:RelayoutColumns()
+  local hOff    = self._hOff or 0
+  local hscroll = self:IsHScrolling()
+  local x = 0
+  for j, col in ipairs(self.columns) do
+    local btn = self.headerButtons[j]
+    if btn then
+      btn:ClearAllPoints()
+      btn:SetPoint("LEFT", self.headerFrame, "LEFT", x - hOff, 0)
+      if (not hscroll) and j == #self.columns then
+        btn:SetPoint("RIGHT", self.headerFrame, "RIGHT", 0, 0)
+      else
+        btn:SetWidth(col.width)
+      end
+    end
+    x = x + col.width
+  end
+  for j = 1, #self.columns - 1 do
+    local h = self.resizeHandles[j]
+    if h and self.headerButtons[j] then
+      h:ClearAllPoints()
+      h:SetPoint("LEFT", self.headerButtons[j], "RIGHT", -3, 0)
+    end
+  end
+end
+
+-- ---- Column reorder drag (COG-46) -----------------------------------------
+function ScrollTableMixin:_BeginColumnDrag(colIdx)
+  self._dragCol = colIdx
+  if not self._dragGhost then
+    local g = CreateFrame("Frame", nil, UIParent)
+    g:SetFrameStrata("TOOLTIP")
+    g:SetSize(80, ST_HEADER_HEIGHT)
+    local bg = g:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(); bg:SetColorTexture(lib.Theme.gold[1], lib.Theme.gold[2], lib.Theme.gold[3], 0.4)
+    g.text = g:CreateFontString(nil, "OVERLAY")
+    g.text:SetFontObject(lib.Fonts.small)
+    g.text:SetPoint("CENTER")
+    g.text:SetTextColor(1, 1, 1)
+    self._dragGhost = g
+  end
+  self._dragGhost.text:SetText(self.columns[colIdx].label or "")
+  self._dragGhost:Show()
+  self._dragGhost:SetScript("OnUpdate", function(g)
+    local scale = UIParent:GetEffectiveScale()
+    local mx, my = GetCursorPosition()
+    g:ClearAllPoints()
+    g:SetPoint("CENTER", UIParent, "BOTTOMLEFT", mx / scale, my / scale)
+  end)
+end
+
+function ScrollTableMixin:_EndColumnDrag()
+  local from = self._dragCol
+  self._dragCol = nil
+  if self._dragGhost then self._dragGhost:Hide(); self._dragGhost:SetScript("OnUpdate", nil) end
+  if not from then return end
+  -- Resolve drop target from cursor X over the header buttons.
+  local mx = GetCursorPosition() / UIParent:GetEffectiveScale()
+  local to = from
+  for j, btn in ipairs(self.headerButtons) do
+    local l, r = btn:GetLeft(), btn:GetRight()
+    if l and r and mx >= l and mx < r then to = j; break end
+  end
+  if to ~= from then self:MoveColumn(from, to) end
+end
+
+-- Move a column to a new position and rebuild header + rows in the new order.
+function ScrollTableMixin:MoveColumn(from, to)
+  if from == to or not self.columns[from] then return end
+  local col = table.remove(self.columns, from)
+  table.insert(self.columns, math.max(1, math.min(#self.columns + 1, to)), col)
+  self:BuildHeader(self.container)
+  for _, row in ipairs(self.rows) do row:Hide(); row:SetParent(nil) end
+  wipe(self.rows)
+  self:Render()
+  self:CommitLayout()
+end
+
+-- Register inline per-row action buttons (COG-52). Each def:
+--   { icon = path, tooltip = str, onClick = fn(rowData), visible = fn(rowData) }
+-- Buttons appear right-aligned on row hover so they don't cover cell text.
+function ScrollTableMixin:EnableRowActions(defs)
+  self.rowActions = defs
+  for _, row in ipairs(self.rows) do row:Hide(); row:SetParent(nil) end
+  wipe(self.rows)
+  self:Render()
 end
 
 function ScrollTableMixin:BuildScrollArea(parent)
@@ -2097,10 +2306,18 @@ function ScrollTableMixin:BuildScrollArea(parent)
   self._thumb = thumb
   self._thumbTex = thumbTex
 
-  -- Mousewheel scrolling
+  -- Mousewheel scrolling. SHIFT+wheel scrolls horizontally when the columns
+  -- overflow the view (COG-52); plain wheel scrolls vertically as before.
   local tbl = self
   self.scrollFrame:EnableMouseWheel(true)
   self.scrollFrame:SetScript("OnMouseWheel", function(sf, delta)
+    if IsShiftKeyDown() and tbl:IsHScrolling() then
+      local hmax = math.max(0, tbl:TotalColumnsWidth() - sf:GetWidth())
+      tbl._hOff = math.max(0, math.min(hmax, (tbl._hOff or 0) - delta * 40))
+      sf:SetHorizontalScroll(tbl._hOff)
+      tbl:RelayoutColumns()
+      return
+    end
     local cur = sf:GetVerticalScroll()
     local range = tbl:GetScrollRange()
     local step = ST_ROW_HEIGHT * 3
@@ -2110,7 +2327,14 @@ function ScrollTableMixin:BuildScrollArea(parent)
   end)
 
   self.scrollFrame:SetScript("OnSizeChanged", function(sf, w)
-    self.content:SetWidth(w)
+    -- Width tracks the view, unless columns overflow and h-scroll is on, in
+    -- which case the scroll child takes the full column width.
+    self.content:SetWidth(tbl:IsHScrolling() and tbl:TotalColumnsWidth() or w)
+    -- Clamp any stale horizontal offset to the new range.
+    local hmax = math.max(0, tbl:TotalColumnsWidth() - w)
+    tbl._hOff = math.max(0, math.min(hmax, tbl._hOff or 0))
+    sf:SetHorizontalScroll(tbl._hOff)
+    tbl:RelayoutColumns()
     tbl:UpdateThumb()
   end)
 
@@ -2225,6 +2449,26 @@ function ScrollTableMixin:GetOrCreateRow(index)
   row.icon:SetPoint("LEFT", row._cellClips[1], "LEFT", 2, 0)
   row.icon:Hide()
 
+  -- Inline row-action buttons (COG-52). Created once per row, right-aligned,
+  -- revealed on hover so they never sit on top of cell text. Built right-to-
+  -- left so the declared order reads left-to-right on screen.
+  row._actionBtns = {}
+  if self.rowActions then
+    local prev
+    for k = #self.rowActions, 1, -1 do
+      local b = CreateFrame("Button", nil, row)
+      b:SetSize(ST_ROW_HEIGHT - 4, ST_ROW_HEIGHT - 4)
+      b:SetFrameLevel(row:GetFrameLevel() + 2)
+      if prev then b:SetPoint("RIGHT", prev, "LEFT",  -2, 0)
+      else         b:SetPoint("RIGHT", row,  "RIGHT", -4, 0) end
+      b.tex = b:CreateTexture(nil, "ARTWORK"); b.tex:SetAllPoints()
+      b.hl  = b:CreateTexture(nil, "HIGHLIGHT"); b.hl:SetAllPoints(); b.hl:SetColorTexture(1, 1, 1, 0.25)
+      b:Hide()
+      row._actionBtns[k] = b
+      prev = b
+    end
+  end
+
   self.rows[index] = row
   return row
 end
@@ -2250,6 +2494,30 @@ function ScrollTableMixin:Render()
       row.cells[j]:SetText(v or "")
     end
 
+    -- Bind inline row-action buttons for this rowData (COG-52); kept hidden
+    -- until the row is hovered.
+    if self.rowActions then
+      for k, def in ipairs(self.rowActions) do
+        local b = row._actionBtns[k]
+        if b then
+          b.tex:SetTexture(def.icon)
+          b:SetScript("OnClick", function() if def.onClick then def.onClick(rowData) end end)
+          if def.tooltip then
+            b:SetScript("OnEnter", function(self2)
+              GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+              GameTooltip:SetText(def.tooltip, 1, 1, 1)
+              GameTooltip:Show()
+            end)
+            b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+          end
+          b._eligible = (not def.visible) or def.visible(rowData) and true or false
+          b:Hide()
+        end
+      end
+    end
+    local function showActions() for _, b in ipairs(row._actionBtns) do if b._eligible then b:Show() end end end
+    local function hideActions() for _, b in ipairs(row._actionBtns) do b:Hide() end end
+
     local defaultAlpha = i % 2 == 0 and T.rowAlt[4] or 0
     if rowData._rowColor then
       local c = rowData._rowColor
@@ -2257,20 +2525,26 @@ function ScrollTableMixin:Render()
       row.bg:SetColorTexture(c[1], c[2], c[3], ba)
       row:SetScript("OnEnter", function(r)
         r.bg:SetColorTexture(c[1], c[2], c[3], ba + 0.08)
+        showActions()
         if row._onEnter then row._onEnter(row) end
       end)
       row:SetScript("OnLeave", function(r)
+        if r:IsMouseOver() then return end   -- still over a child action button
         r.bg:SetColorTexture(c[1], c[2], c[3], ba)
+        hideActions()
         GameTooltip:Hide()
       end)
     else
       row.bg:SetColorTexture(1, 1, 1, defaultAlpha)
       row:SetScript("OnEnter", function(r)
         r.bg:SetColorTexture(unpack(T.rowHover))
+        showActions()
         if row._onEnter then row._onEnter(row) end
       end)
       row:SetScript("OnLeave", function(r)
+        if r:IsMouseOver() then return end
         r.bg:SetColorTexture(1, 1, 1, defaultAlpha)
+        hideActions()
         GameTooltip:Hide()
       end)
     end
@@ -2318,8 +2592,12 @@ function ScrollTableMixin:Render()
     row:Show()
   end
 
+  self.content:SetWidth(self:IsHScrolling() and self:TotalColumnsWidth()
+                                            or self.scrollFrame:GetWidth())
   self.content:SetHeight(math.max(1, #self.data * ST_ROW_HEIGHT))
   self.scrollFrame:SetVerticalScroll(0)
+  self.scrollFrame:SetHorizontalScroll(self._hOff or 0)
+  self:RelayoutColumns()
   self:UpdateThumb()
 end
 
@@ -2337,9 +2615,9 @@ function ScrollTableMixin:Hide()
 end
 function ScrollTableMixin:GetRowHeight() return ST_ROW_HEIGHT end
 
-function lib:CreateScrollTable(parent, columns)
+function lib:CreateScrollTable(parent, columns, opts)
   local tbl = setmetatable({}, { __index = ScrollTableMixin })
-  tbl:Init(parent, columns)
+  tbl:Init(parent, columns, opts)
   return tbl
 end
 

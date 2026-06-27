@@ -45,18 +45,46 @@
 -- The caller is responsible for hiding behaviour: nothing in the lib
 -- forces the mini to appear at login. Each cog persists its own
 -- "shown" boolean and decides when to restore.
+--
+-- Inner-row primitives (COG-41 shell + COG-51 body). The shell above is the
+-- frame; these stack composable rows inside `mini.content` so cogs don't
+-- hand-roll the body each time:
+--
+--   local strip = mini:AddPartnerStrip({ label = "Alts — Stormrage", icon = ... })
+--   strip:AddTaskRow({                         -- indented under the strip
+--     icon    = "Interface\\Icons\\INV_Misc_Coin_01",
+--     text    = "Sell 12 -> AH",
+--     tooltip = "Click to open, right-click to skip",  -- string or fn(tt, rowData)
+--     rowData = task,
+--     onClick      = function(rowData) ... end,         -- left click
+--     onRightClick = function(rowData) ... end,         -- right click
+--     actions = {                                        -- right-aligned icon buttons
+--       { icon = POST_ICON, tooltip = "Post", onClick = function(rd) ... end },
+--       { icon = LINK_ICON, tooltip = "Link", visible = function(rd) return rd.link end },
+--     },
+--   })
+--   mini:AddTaskRow({ text = "Ungrouped row" })   -- top-level (no indent)
+--   mini:ClearRows()                              -- wipe the body to rebuild
+--   mini:GetRowsHeight()                          -- total stacked height
+--
+-- Rows stack top-down inside content; the caller sizes the frame (or registers
+-- the mini's geometry) so the stack fits.
 
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 17
+local MODULE_MINOR = 18
 lib._modules = lib._modules or {}
 if (lib._modules.MiniView or 0) >= MODULE_MINOR then return end
 lib._modules.MiniView = MODULE_MINOR
 
 local TITLEBAR_H     = 22
 local GRIP_SIZE      = 14
+local ROW_H          = 22      -- task-row pitch
+local STRIP_H        = 18      -- partner-strip header pitch
+local ROW_INDENT     = 12      -- indent of rows added under a partner strip
+local ACTION_SIZE    = 16      -- inner-row action button size
 local DEFAULT_W      = 220
 local DEFAULT_H      = 120
 local DEFAULT_MIN_W  = 120
@@ -197,6 +225,155 @@ function lib:CreateMiniView(opts)
   content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
   frame.content = content
 
+  -- ---- Inner-row primitives (COG-51) -------------------------------------
+  -- Composable body: partner strips + task rows stacked top-down in content.
+  local rows = {}   -- ordered { frame, h, indent, kind }
+
+  local function relayoutRows()
+    local y = 0
+    for _, e in ipairs(rows) do
+      e.frame:ClearAllPoints()
+      e.frame:SetPoint("TOPLEFT", content, "TOPLEFT", e.indent or 0, -y)
+      e.frame:SetPoint("RIGHT",   content, "RIGHT",   0, 0)
+      y = y + e.h
+    end
+    frame._rowsHeight = y
+  end
+
+  local function makeActionButton(parent, act, rowData)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(ACTION_SIZE, ACTION_SIZE)
+    b.tex = b:CreateTexture(nil, "ARTWORK")
+    b.tex:SetAllPoints()
+    if act.icon then b.tex:SetTexture(act.icon) end
+    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+    b.hl:SetAllPoints(); b.hl:SetColorTexture(1, 1, 1, 0.25)
+    b:SetScript("OnClick", function() if act.onClick then act.onClick(rowData) end end)
+    if act.tooltip then
+      b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(act.tooltip, 1, 1, 1)
+        GameTooltip:Show()
+      end)
+      b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    return b
+  end
+
+  local function addTaskRow(o, indent)
+    o = o or {}
+    local T = self.Theme
+    local row = CreateFrame("Button", nil, content)
+    row:SetHeight(ROW_H)
+    row._rowData = o.rowData
+
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetColorTexture(1, 1, 1, 0)
+
+    local xLeft = 4
+    if o.icon then
+      row.icon = row:CreateTexture(nil, "ARTWORK")
+      row.icon:SetSize(16, 16)
+      row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+      row.icon:SetTexture(o.icon)
+      xLeft = 24
+    end
+
+    row.text = row:CreateFontString(nil, "OVERLAY")
+    row.text:SetFontObject(self:GetFont("normal") or "GameFontNormal")
+    row.text:SetPoint("LEFT", row, "LEFT", xLeft, 0)
+    row.text:SetJustifyH("LEFT")
+    row.text:SetWordWrap(false)
+    row.text:SetText(o.text or "")
+    row.text:SetTextColor(unpack(T.text))
+
+    -- Right-aligned action cluster, built right-to-left so the declared order
+    -- reads left-to-right on screen.
+    row.actions = {}
+    if o.actions and #o.actions > 0 then
+      local prev
+      for i = #o.actions, 1, -1 do
+        local b = makeActionButton(row, o.actions[i], o.rowData)
+        if prev then b:SetPoint("RIGHT", prev, "LEFT", -4, 0)
+        else        b:SetPoint("RIGHT", row,  "RIGHT", -4, 0) end
+        if o.actions[i].visible and not o.actions[i].visible(o.rowData) then b:Hide() end
+        prev = b
+        row.actions[i] = b
+      end
+      row.text:SetPoint("RIGHT", prev, "LEFT", -4, 0)
+    else
+      row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    end
+
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row:SetScript("OnClick", function(_, button)
+      if button == "RightButton" then
+        if o.onRightClick then o.onRightClick(o.rowData) end
+      elseif o.onClick then
+        o.onClick(o.rowData)
+      end
+    end)
+    row:SetScript("OnEnter", function(self2)
+      self2.bg:SetColorTexture(unpack(T.rowHover))
+      if o.tooltip then
+        GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+        if type(o.tooltip) == "function" then o.tooltip(GameTooltip, o.rowData)
+        else GameTooltip:SetText(o.tooltip, 1, 1, 1, 1, true) end
+        GameTooltip:Show()
+      end
+    end)
+    row:SetScript("OnLeave", function(self2)
+      self2.bg:SetColorTexture(1, 1, 1, 0)
+      GameTooltip:Hide()
+    end)
+
+    rows[#rows + 1] = { frame = row, h = ROW_H, indent = indent and ROW_INDENT or 0, kind = "row" }
+    relayoutRows()
+    return row
+  end
+
+  local function addPartnerStrip(o)
+    o = o or {}
+    local T = self.Theme
+    local strip = CreateFrame("Frame", nil, content)
+    strip:SetHeight(STRIP_H)
+    strip.bg = strip:CreateTexture(nil, "BACKGROUND")
+    strip.bg:SetAllPoints()
+    strip.bg:SetColorTexture(T.header[1], T.header[2], T.header[3], 0.6)
+
+    local xLeft = 4
+    if o.icon then
+      strip.icon = strip:CreateTexture(nil, "ARTWORK")
+      strip.icon:SetSize(14, 14)
+      strip.icon:SetPoint("LEFT", strip, "LEFT", 4, 0)
+      strip.icon:SetTexture(o.icon)
+      xLeft = 22
+    end
+
+    strip.text = strip:CreateFontString(nil, "OVERLAY")
+    strip.text:SetFontObject(self:GetFont("small") or "GameFontNormalSmall")
+    strip.text:SetPoint("LEFT", strip, "LEFT", xLeft, 0)
+    strip.text:SetText(o.label or o.text or "")
+    strip.text:SetTextColor(unpack(T.gold))
+
+    rows[#rows + 1] = { frame = strip, h = STRIP_H, indent = 0, kind = "strip" }
+    relayoutRows()
+
+    -- Rows added through the strip are indented beneath it.
+    function strip:AddTaskRow(rowOpts) return addTaskRow(rowOpts, true) end
+    return strip
+  end
+
+  function frame:AddTaskRow(o)      return addTaskRow(o, false) end
+  function frame:AddPartnerStrip(o) return addPartnerStrip(o)   end
+  function frame:GetRowsHeight()    return frame._rowsHeight or 0 end
+  function frame:ClearRows()
+    for _, e in ipairs(rows) do e.frame:Hide(); e.frame:SetParent(nil) end
+    wipe(rows)
+    frame._rowsHeight = 0
+  end
+
   -- ---- Pin behaviour -----------------------------------------------------
   local pinned = (shouldPersist("pinned") and sv.pinned) and true or false
 
@@ -248,6 +425,14 @@ function lib:CreateMiniView(opts)
     if key == "uiScale" then applyUiScale()
     elseif key == "fontScale" or key == "fontFamily" then
       titleText:SetFontObject(self:GetFont("normal") or "GameFontNormal")
+      for _, e in ipairs(rows) do
+        if e.frame.text then
+          e.frame.text:SetFontObject(
+            self:GetFont(e.kind == "strip" and "small" or "normal")
+            or "GameFontNormal")
+        end
+      end
+      relayoutRows()
     end
   end)
   frame._reflowOwner = owner

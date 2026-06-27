@@ -961,7 +961,7 @@ pages.tables = function(parent)
 
   local y = 0
 
-  local header = cw:CreateSectionHeader(f, "CreateScrollTable — sortable, resizable columns", -8)
+  local header = cw:CreateSectionHeader(f, "CreateScrollTable — sort, resize, reorder, h-scroll, row actions", -8)
 
   -- Table container
   local tableFrame = CreateFrame("Frame", nil, f)
@@ -969,8 +969,8 @@ pages.tables = function(parent)
   tableFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 40)
 
   local columns = {
-    { key = "name",    label = "Character",  width = 120, sortable = true },
-    { key = "realm",   label = "Realm",      width = 100, sortable = true },
+    { key = "name",    label = "Character",  width = 120, sortable = true, minWidth = 60 },
+    { key = "realm",   label = "Realm",      width = 100, sortable = true, minWidth = 50 },
     { key = "class",   label = "Class",      width = 90,  sortable = true },
     { key = "level",   label = "Level",      width = 50,  sortable = true, align = "RIGHT" },
     { key = "gold",    label = "Gold",       width = 80,  sortable = true, align = "RIGHT",
@@ -978,7 +978,22 @@ pages.tables = function(parent)
     { key = "status",  label = "Status",     width = 80,  sortable = true },
   }
 
-  local tbl = cw:CreateScrollTable(tableFrame, columns)
+  -- COG-46 / COG-52 opts: reorder + horizontal scroll + persisted layout +
+  -- hover-revealed row actions. _showcaseTableLayout persists within the
+  -- session so reopening the page keeps the column order / widths.
+  _showcaseTableLayout = _showcaseTableLayout or {}
+  local tbl = cw:CreateScrollTable(tableFrame, columns, {
+    allowReorder     = true,
+    horizontalScroll = true,
+    saveLayoutTo     = _showcaseTableLayout,
+    rowActions = {
+      { icon = "Interface\\Buttons\\UI-GuildButton-MOTD-Up", tooltip = "Inspect",
+        onClick = function(d) cw:Print("Cogworks", "Inspect " .. (d.name or "?")) end },
+      { icon = "Interface\\Buttons\\UI-GroupLoot-Pass-Up", tooltip = "Ignore",
+        visible = function(d) return d.status ~= "Bank" end,
+        onClick = function(d) cw:Print("Cogworks", "Ignore " .. (d.name or "?")) end },
+    },
+  })
   tbl:SetSort("name", true)
 
   -- Generate fake data
@@ -1014,7 +1029,7 @@ pages.tables = function(parent)
   local info = f:CreateFontString(nil, "OVERLAY")
   info:SetFontObject(cw.Fonts.small)
   info:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 12)
-  info:SetText("|cffd4a017" .. #fakeData .. " rows|r — click column headers to sort, drag borders to resize")
+  info:SetText("|cffd4a017" .. #fakeData .. " rows|r — click headers to sort, drag borders to resize, drag headers to reorder, SHIFT+wheel to scroll wide, hover a row for actions")
   info:SetTextColor(unpack(T.textDim))
 
   return f
@@ -1093,6 +1108,55 @@ pages.popups = function(parent)
     popup:Show()
   end)
   multiBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  y = y - 50
+
+  -- ---- CreateAnchoredPopup (COG-50) -------------------------------------
+  cw:CreateSectionHeader(c, "CreateAnchoredPopup — non-modal, anchored, progress + footer", y)
+  y = y - 22
+
+  local adesc = c:CreateFontString(nil, "OVERLAY")
+  adesc:SetFontObject(cw.Fonts.small)
+  adesc:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
+  adesc:SetPoint("RIGHT", c, "RIGHT", -8, 0)
+  adesc:SetJustifyH("LEFT"); adesc:SetWordWrap(true)
+  adesc:SetText("Pins next to its anchor (no dim, no modal). Main bar lerps smoothly toward the target; the heartbeat sub-bar counts down inter-step waits. Footer carries one primary button.")
+  adesc:SetTextColor(unpack(T.textDim))
+  y = y - 40
+
+  local anchoredPopup, aTicker
+  local anchoredBtn
+  anchoredBtn = cw:CreateButton(c, "Open Anchored Popup", 180, 28, function()
+    if anchoredPopup and anchoredPopup:IsShown() then anchoredPopup:Hide(); return end
+    if not anchoredPopup then
+      anchoredPopup = cw:CreateAnchoredPopup({
+        title    = "Bank run", width = 260, height = 170,
+        anchorTo = anchoredBtn, anchorMode = "right", gap = 8,
+        progress = { heartbeat = true, smoothing = 0.15 },
+        footer   = { button = { text = "Execute", onClick = function()
+          cw:Print("Cogworks", "Anchored popup: Execute")
+        end } },
+      })
+      local msg = anchoredPopup.content:CreateFontString(nil, "OVERLAY")
+      msg:SetFontObject(cw.Fonts.small)
+      msg:SetAllPoints(); msg:SetJustifyH("LEFT"); msg:SetJustifyV("TOP"); msg:SetWordWrap(true)
+      msg:SetText("Pulling 30 stacks from the bank. The bar smooths toward each target; the heartbeat ticks during BAG_UPDATE gaps.")
+      msg:SetTextColor(unpack(T.text))
+
+      aTicker = CreateFrame("Frame", nil, anchoredPopup)
+      local step, t = 0, 0
+      aTicker:SetScript("OnUpdate", function(_, dt)
+        t = t + dt
+        if t < 0.8 then return end
+        t = 0; step = step + 1
+        anchoredPopup:SetProgress(math.min(1, step / 30))
+        anchoredPopup:SetProgressText(string.format("%d / 30", math.min(step, 30)))
+        anchoredPopup:Heartbeat(0.8)
+        if step >= 30 then step = 0 end
+      end)
+    end
+    anchoredPopup:Show()
+  end)
+  anchoredBtn:SetPoint("TOPLEFT", c, "TOPLEFT", 8, y)
   y = y - 50
 
   cw:CreateSectionHeader(c, "Usage", y)
@@ -1547,6 +1611,8 @@ end
 -- pass its persistent SavedVariables sub-table here.
 local _showcaseMiniSV = {}
 local _showcaseMini
+local _showcaseMiniRowsSV = {}
+local _showcaseMiniRows
 
 pages.mini = function(parent)
   local f = CreateFrame("Frame", nil, parent)
@@ -1588,6 +1654,38 @@ pages.mini = function(parent)
     if _showcaseMini:IsShown() then _showcaseMini:Hide() else _showcaseMini:Show() end
   end)
   btn:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+
+  -- COG-51: inner-row primitives (partner strips + task rows + action buttons).
+  local rowsBtn = cw:CreateButton(f, "Open MiniView with rows", 200, 28, function()
+    if not _showcaseMiniRows then
+      _showcaseMiniRows = cw:CreateMiniView({
+        name      = "CogworksShowcaseMiniRows",
+        title     = "To-do",
+        width     = 260, height = 190,
+        savedvars = _showcaseMiniRowsSV,
+      })
+      _showcaseMiniRows:ClearRows()
+      local strip = _showcaseMiniRows:AddPartnerStrip({ label = "Stormrage — alts" })
+      local function actions(name)
+        return {
+          { icon = "Interface\\Buttons\\UI-GroupLoot-Coin-Up", tooltip = "Post",
+            onClick = function() cw:Print("Cogworks", "Post " .. name) end },
+          { icon = "Interface\\Buttons\\UI-GroupLoot-DE-Up", tooltip = "Skip",
+            onClick = function() cw:Print("Cogworks", "Skip " .. name) end },
+        }
+      end
+      strip:AddTaskRow({ icon = "Interface\\Icons\\INV_Misc_Coin_01", text = "Sell 12 Linen",
+        tooltip = "Left-click open, right-click skip", actions = actions("Linen"),
+        onClick = function() cw:Print("Cogworks", "open Linen") end,
+        onRightClick = function() cw:Print("Cogworks", "skip Linen") end })
+      strip:AddTaskRow({ icon = "Interface\\Icons\\INV_Fabric_Wool_01", text = "Pull 4 Wool",
+        actions = actions("Wool") })
+      _showcaseMiniRows:AddTaskRow({ text = "Ungrouped: restock flasks",
+        tooltip = "A top-level row (no partner strip)" })
+    end
+    if _showcaseMiniRows:IsShown() then _showcaseMiniRows:Hide() else _showcaseMiniRows:Show() end
+  end)
+  rowsBtn:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -10)
 
   return f
 end
@@ -1946,6 +2044,68 @@ pages.sections = function(parent)
   autoLabel:SetText("autoWidth (clamped 120 — 360px); refits on font change")
   add(autoRow, function() return 28 end, 24, false)
 
+  -- ---- CreateDropdown itemBuilder custom rows (COG-45) -------------------
+  addSectionHeader("CreateDropdown — itemBuilder (custom rows)")
+  local sourceItems = {
+    { key = "tsm", label = "TSM",         sub = "updated 4h ago", width = 220 },
+    { key = "atr", label = "Auctionator", sub = "updated 1d ago", width = 220 },
+    { key = "fp",  label = "FlippingPal",  sub = "stale (12d)",    width = 220 },
+  }
+  local ibRow = CreateFrame("Frame", nil, c)
+  ibRow:SetHeight(28)
+  local ibDD = cw:CreateDropdown(ibRow, sourceItems, "tsm",
+    function(k) cw:Print("Cogworks", "source: " .. k) end,
+    { autoWidth = true, minWidth = 180, maxWidth = 280,
+      itemBuilder = function(row, item, isSelected)
+        local name = row:CreateFontString(nil, "OVERLAY")
+        name:SetFontObject(cw:GetFont("small"))
+        name:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 1)
+        name:SetText(item.label)
+        name:SetTextColor(unpack(isSelected and T.gold or T.text))
+        local sub = row:CreateFontString(nil, "OVERLAY")
+        sub:SetFontObject(cw:GetFont("small"))
+        sub:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -2, 1)
+        sub:SetText(item.sub)
+        sub:SetTextColor(unpack(T.textDim))
+      end })
+  ibDD:SetPoint("LEFT", ibRow, "LEFT", 0, 0)
+  local ibLabel = ibRow:CreateFontString(nil, "OVERLAY")
+  ibLabel:SetFontObject(cw:GetFont("small"))
+  ibLabel:SetPoint("LEFT", ibDD, "RIGHT", 12, 0)
+  ibLabel:SetTextColor(unpack(T.textDim))
+  ibLabel:SetText("custom rows: name + dim freshness subtitle")
+  add(ibRow, function() return 28 end, 24, false)
+
+  -- ---- CreateSegmentedControl count badges + disabled (COG-39) ----------
+  addSectionHeader("CreateSegmentedControl — count badges + disabled")
+  local segRow = CreateFrame("Frame", nil, c)
+  segRow:SetHeight(28)
+  local seg = cw:CreateSegmentedControl(segRow, {
+    size    = "normal",
+    initial = "buy",
+    options = {
+      { key = "buy",     label = "Buy",     count = 12 },
+      { key = "sell",    label = "Sell",    count = 4  },
+      { key = "routing", label = "Routing", count = 0, disabled = true },
+    },
+    onChange = function(k) cw:Print("Cogworks", "segment: " .. k) end,
+  })
+  seg:SetPoint("LEFT", segRow, "LEFT", 0, 0)
+  add(segRow, function() return 28 end, 8, false)
+
+  local segBtnRow = CreateFrame("Frame", nil, c)
+  segBtnRow:SetHeight(26)
+  local routingOff = true   -- starts disabled (matches the option above)
+  local segToggle = cw:CreateButton(segBtnRow, "Toggle Routing via SetOptionState", 240, 22, function()
+    routingOff = not routingOff
+    seg:SetOptionState("routing", {
+      disabled = routingOff,
+      count    = routingOff and 0 or 3,
+    })
+  end)
+  segToggle:SetPoint("LEFT", segBtnRow, "LEFT", 0, 0)
+  add(segBtnRow, function() return 26 end, 24, false)
+
   -- Subscribe at the page level so font-scale / family changes trigger an
   -- immediate relayout — picks up the new body GetStringHeight values that
   -- each section's heightFn recomputes when called.
@@ -2077,9 +2237,9 @@ pages.mainframe = function(parent)
         name          = "CogworksShowcaseDemoFrame",
         title         = "ThemedMainFrame demo",
         versionText   = "v" .. cw.version,
-        defaultSize   = { w = 620, h = 420 },
-        minSize       = { w = 480, h = 320 },
-        sidebar       = { defaultWidth = 130 },
+        defaultSize   = { w = 620, h = 340 },
+        minSize       = { w = 480, h = 260 },
+        sidebar       = { defaultWidth = 130, scrollable = true },  -- COG-37
         closeOnEscape = true,
       })
       demo:SetSummary("Sample summary text — frame:SetSummary(text)")
@@ -2101,6 +2261,13 @@ pages.mainframe = function(parent)
       demo:AddNavItem({ key = "alpha", label = "Alpha", icon = "Interface\\Icons\\Spell_Holy_FistOfJustice" })
       demo:AddNavItem({ key = "beta",  label = "Beta",  icon = "Interface\\Icons\\Spell_Frost_FrostBolt02"  })
       demo:AddNavItem({ key = "gamma", label = "Gamma", icon = "Interface\\Icons\\Spell_Nature_LightningBolt" })
+      -- Extra nav items so the stack overflows the short demo frame and the
+      -- scrollable sidebar (COG-37) actually scrolls (mouse-wheel over nav).
+      for _, n in ipairs({ "Delta", "Epsilon", "Zeta", "Eta", "Theta", "Iota", "Kappa", "Lambda" }) do
+        local key = n:lower()
+        demo:SetPageBuilder(key, makePage("Page " .. n, T.textDim))
+        demo:AddNavItem({ key = key, label = n, icon = "Interface\\Icons\\INV_Misc_Gear_01" })
+      end
       demo:SetActivePage("alpha")
       f._demo = demo
     end
@@ -2204,7 +2371,8 @@ pages.toast = function(parent)
   intro:SetWordWrap(true)
   intro:SetTextColor(unpack(T.textDim))
   intro:SetText("Click each severity to fire a toast. Multiple firings stack vertically from the top-right of the screen. "
-              .. "Hover a toast to pause its auto-dismiss; click anywhere on it to dismiss immediately.")
+              .. "Hover a toast to pause its auto-dismiss; click anywhere on it to dismiss immediately. "
+              .. "Use \"Move toasts on screen\" to drag the position to any corner (persists across /reload).")
 
   local sevs = {
     { label = "Toast: success", severity = "success", text = "Posted 12 items for ~84g",
@@ -2229,6 +2397,24 @@ pages.toast = function(parent)
     cw:ClearToasts()
   end)
   clearBtn:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -16)
+
+  -- COG-79: drag-to-move overlay (the same control the Appearance tab exposes).
+  local moveBtn
+  moveBtn = cw:CreateButton(f, "Move toasts on screen", 180, 24, function()
+    if cw:IsToastMoveMode() then
+      cw:ExitToastMoveMode()
+      moveBtn.text:SetText("Move toasts on screen")
+    else
+      cw:EnterToastMoveMode()
+      moveBtn.text:SetText("Done moving toasts")
+    end
+  end)
+  moveBtn:SetPoint("TOPLEFT", clearBtn, "BOTTOMLEFT", 0, -16)
+
+  local resetPosBtn = cw:CreateButton(f, "Reset toast position", 180, 24, function()
+    cw:ResetToastAnchor()
+  end)
+  resetPosBtn:SetPoint("TOPLEFT", moveBtn, "BOTTOMLEFT", 0, -6)
 
   return f
 end
@@ -2587,6 +2773,19 @@ pages.appearance = function(parent)
             description = "Suite-wide appearance: profile, fonts, theme. Toggle the per-cog override "
                        .. "at the top to give this cog its own font scale + family while leaving the "
                        .. "rest of the suite at the active profile.",
+            -- COG-73: cog-specific appearance rows appended below the standard
+            -- editor (above the Reset button) via opts.extensions.
+            extensions  = function(block, yOffset)
+              local row, h = cw:CreateSettingsCheckbox(block, {
+                label       = "Show item icons in todo rows",
+                description = "Example cog-specific appearance toggle added through opts.extensions.",
+                value       = true,
+                onChange    = function(v) cw:Print("Cogworks", "extension toggle: " .. tostring(v)) end,
+              })
+              row:SetPoint("TOPLEFT",  block, "TOPLEFT",  12, -yOffset)
+              row:SetPoint("TOPRIGHT", block, "TOPRIGHT", -12, -yOffset)
+              return h or 28
+            end,
           })
         end },
     },

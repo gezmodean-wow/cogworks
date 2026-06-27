@@ -61,7 +61,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for rationale.
-local MODULE_MINOR = 5
+local MODULE_MINOR = 6
 lib._modules = lib._modules or {}
 if (lib._modules.Scaling or 0) >= MODULE_MINOR then return end
 lib._modules.Scaling = MODULE_MINOR
@@ -482,6 +482,7 @@ end
 --   Theme dropdown
 --   Colors              — grouped editable swatches (click -> ColorPickerFrame)
 --   Save as Custom / Export Theme / Import Theme
+--   Cog extension rows  — opts.extensions, appended here (optional)
 --   Reset to defaults
 --
 -- opts:
@@ -491,6 +492,12 @@ end
 --   showFontFamily   bool   — default true
 --   showTheme        bool   — default true (also gates the color editor)
 --   description      string — header copy above the controls
+--   extensions       fn(block, yOffset) -> consumedHeight (COG-73) — append a
+--                             few cog-specific appearance rows below the standard
+--                             editor. Anchor your widgets to `block` (the scroll
+--                             content) at TOPLEFT/TOPRIGHT, y = -(yOffset + dy),
+--                             and return the total height you used. The Reset
+--                             button stays at the very bottom, after your rows.
 --
 -- Color editing targets the suite-wide active theme (cw.Theme), not a single
 -- cog — per-cog theme is a planned stretch (cogworks #74). The Colors header
@@ -939,6 +946,56 @@ function lib:CreateUIScalingSettingsBlock(parent, opts)
     importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 6, 0)
 
     y = y + 34
+  end
+
+  -- Toast position (COG-79) -------------------------------------------------
+  -- Standard entry point for the toast drag-to-move overlay. Gated by the Toast
+  -- module being present (a cog could vendor a mismatched copy) and suppressible
+  -- via opts.showToasts = false.
+  if opts.showToasts ~= false and lib.EnterToastMoveMode then
+    section("Toasts")
+    local moveBtn
+    moveBtn = self:CreateButton(content, "Move toasts on screen", 180, 24, function()
+      if lib:IsToastMoveMode() then
+        lib:ExitToastMoveMode()
+        moveBtn.text:SetText("Move toasts on screen")
+      else
+        lib:EnterToastMoveMode()
+        moveBtn.text:SetText("Done moving toasts")
+      end
+    end)
+    moveBtn:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -y)
+    local resetPosBtn = self:CreateButton(content, "Reset position", 120, 24, function()
+      lib:ResetToastAnchor()
+    end)
+    resetPosBtn:SetPoint("LEFT", moveBtn, "RIGHT", 8, 0)
+    y = y + 30
+
+    local note = content:CreateFontString(nil, "OVERLAY")
+    note:SetFontObject(self:GetFont("small"))
+    note:SetTextColor(unpack(T.textDim))
+    note:SetPoint("TOPLEFT",  content, "TOPLEFT",  PAD, -y)
+    note:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
+    note:SetJustifyH("LEFT")
+    note:SetWordWrap(true)
+    note:SetText("Drag the highlighted box near a screen corner, then close it to finish.")
+    y = y + math.max(note:GetStringHeight(), 12) + 6
+  end
+
+  -- Cog-extension rows (COG-73) ---------------------------------------------
+  -- Let a cog append a few appearance-related rows below the standard editor
+  -- (e.g. "compact rows", "show item icons in todo list") without splitting its
+  -- appearance UI across tabs. The builder anchors its own widgets to `content`
+  -- using the block's coordinate convention and returns the height it consumed;
+  -- the Reset button below stays at the very bottom.
+  if type(opts.extensions) == "function" then
+    y = y + 14
+    local ok, consumed = pcall(opts.extensions, content, y)
+    if ok then
+      y = y + (tonumber(consumed) or 0)
+    elseif geterrorhandler then
+      geterrorhandler()(consumed)
+    end
   end
 
   -- Reset button ------------------------------------------------------------

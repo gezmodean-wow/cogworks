@@ -26,8 +26,15 @@
 --     maxSize       = { w = 1200, h = 900 },
 --     saveTo        = ns.db.settings.frame,    -- mutated in place
 --     closeOnEscape = true,
---     sidebar       = { defaultWidth = 130, minWidth = 80, maxWidth = 220 },
+--     sidebar       = { defaultWidth = 130, minWidth = 80, maxWidth = 220,
+--                       scrollable = true },   -- mouse-wheel nav when it overflows
 --   })
+--
+-- sidebar.scrollable (COG-37): defaults false (nav anchors straight to the
+-- sidebar, unchanged). When true the nav stack lives in an internal ScrollFrame
+-- whose child grows with the item count, the mouse wheel scrolls it once the
+-- stack exceeds the visible sidebar height, and SetActivePage auto-scrolls the
+-- active item into view. The drag handle still resizes the sidebar width.
 --
 -- Note: `closeOnEscape` registers the frame with Blizzard's UISpecialFrames,
 -- which requires a globally named frame — pass `opts.name` if you want ESC
@@ -49,7 +56,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 2
+local MODULE_MINOR = 3
 lib._modules = lib._modules or {}
 if (lib._modules.ThemedMainFrame or 0) >= MODULE_MINOR then return end
 lib._modules.ThemedMainFrame = MODULE_MINOR
@@ -113,6 +120,7 @@ function lib:CreateThemedMainFrame(opts)
                    or sidebarOpts.defaultWidth or DEFAULT_SIDEBAR_W
   local sidebarMin  = sidebarOpts.minWidth or 80
   local sidebarMax  = sidebarOpts.maxWidth or 280
+  local scrollable  = sidebarOpts.scrollable
   local saveTo      = opts.saveTo
 
   -- ---- Outer frame ------------------------------------------------------
@@ -278,18 +286,65 @@ function lib:CreateThemedMainFrame(opts)
   local builders   = {}        -- key → fn(parent) → frame
   local activeKey
 
+  -- Nav host. Default: nav buttons anchor straight to the sidebar (unchanged).
+  -- Scrollable: buttons live inside a clipping ScrollFrame whose child grows
+  -- with the item count, so overflow scrolls instead of running off-screen.
+  local navHost = sidebar
+  local navScroll
+  if scrollable then
+    navScroll = CreateFrame("ScrollFrame", nil, sidebar)
+    navScroll:SetPoint("TOPLEFT",     sidebar, "TOPLEFT",     0, 0)
+    navScroll:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -1, 0)
+    navScroll:EnableMouseWheel(true)   -- wheel only; no EnableMouse, so clicks
+                                       -- pass through to nav buttons + handle
+    local navContent = CreateFrame("Frame", nil, navScroll)
+    navContent:SetSize(sidebarW, 1)
+    navScroll:SetScrollChild(navContent)
+    navScroll:SetScript("OnMouseWheel", function(sf, delta)
+      local range = math.max(0, navContent:GetHeight() - sf:GetHeight())
+      local cur   = sf:GetVerticalScroll()
+      sf:SetVerticalScroll(math.max(0, math.min(range, cur - delta * NAV_BTN_H)))
+    end)
+    navScroll:SetScript("OnSizeChanged", function(_, w) navContent:SetWidth(w) end)
+    navHost     = navContent
+    f._navScroll = navScroll
+  end
+
   local function relayoutNav()
     local y = 0
     for _, entry in ipairs(navItems) do
       entry.btn:ClearAllPoints()
-      entry.btn:SetPoint("TOPLEFT",  sidebar, "TOPLEFT",  0, -y)
-      entry.btn:SetPoint("RIGHT",    sidebar, "RIGHT",    -1, 0)
+      entry.btn:SetPoint("TOPLEFT",  navHost, "TOPLEFT",  0, -y)
+      entry.btn:SetPoint("RIGHT",    navHost, "RIGHT",    -1, 0)
       y = y + NAV_BTN_H
+    end
+    if scrollable then
+      navHost:SetWidth(navScroll:GetWidth())
+      navHost:SetHeight(math.max(y, 1))
     end
   end
 
+  -- Scroll the active nav item into the visible viewport (scrollable only).
+  local function scrollNavIntoView(key)
+    if not scrollable then return end
+    local idx
+    for i, e in ipairs(navItems) do if e.key == key then idx = i; break end end
+    if not idx then return end
+    local top    = (idx - 1) * NAV_BTN_H
+    local bottom = top + NAV_BTN_H
+    local viewH  = navScroll:GetHeight()
+    local cur    = navScroll:GetVerticalScroll()
+    if top < cur then
+      cur = top
+    elseif bottom > cur + viewH then
+      cur = bottom - viewH
+    end
+    local range = math.max(0, navHost:GetHeight() - viewH)
+    navScroll:SetVerticalScroll(math.max(0, math.min(range, cur)))
+  end
+
   local function showPage(key)
-    if activeKey == key then return end
+    if activeKey == key then scrollNavIntoView(key); return end
     -- Hide previous
     if activeKey then
       local prev = navByKey[activeKey]
@@ -303,6 +358,7 @@ function lib:CreateThemedMainFrame(opts)
     if pages[key] then pages[key]:Show() end
     if navByKey[key] then lib:SetNavButtonActive(navByKey[key].btn, true) end
     activeKey = key
+    scrollNavIntoView(key)
   end
 
   function f:AddNavItem(item)
@@ -310,7 +366,7 @@ function lib:CreateThemedMainFrame(opts)
       "ThemedMainFrame:AddNavItem requires { key, label, ... }")
     if navByKey[item.key] then return navByKey[item.key].btn end
 
-    local btn = lib:CreateNavButton(sidebar, item, function()
+    local btn = lib:CreateNavButton(navHost, item, function()
       showPage(item.key)
       if item.onClick then item.onClick() end
     end)

@@ -34,5 +34,6 @@
     <Script file="Toast.lua" />
     <Script file="Loading.lua" />
     <Script file="TaskProgress.lua" />
+    <Script file="AnchoredPopup.lua" />
 
 </Ui>
