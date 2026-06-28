@@ -84,8 +84,7 @@ Player-facing conventions (`## Player summary` in issue bodies, `## Player updat
 | [shared/ file pool](https://github.com/gezmodean-wow/cogworks/blob/main/shared/VERSION) | 2026-05-07a — `bash shared/scripts/sync-standards.sh check` |
 | [standards-sync (this mechanism)](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/standards-sync.md) | 2026-06-27a |
 | [cross-repo coordination](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/cross-repo-coordination.md) | 2026-05-07a |
-
-The `roadmap & version broadcast` row joins this table when that runbook migrates here under CF-9 (cogworks#47).
+| [roadmap & version broadcast](https://github.com/gezmodean-wow/cogworks/blob/main/runbooks/roadmap-and-version-broadcast.md) | 2026-05-07a |
 
 ## Release artifacts: single changelog
 
