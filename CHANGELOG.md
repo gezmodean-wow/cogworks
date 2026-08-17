@@ -2,6 +2,60 @@
 
 All notable changes to Cogworks-1.0 are tracked here. The library is **additive only** — old APIs never disappear, so every entry below is something gained, never lost.
 
+## [0.17.0] — 2026-08-16 — Item-string correctness, debug ring, loading-banner pooling + WoW 12.1.0
+
+Bumps `MINOR` from `31` to `32`. A correctness-and-cost release, all three items driven by FlipQueue's v0.13 adoption work: `ItemKeyToItemString` produced structurally invalid item strings for **every** item carrying a bonus or modifier block; `DebugPrint` shifted a 500-element array on every call; and `ShowLoading` permanently leaked a frame tree per call. Every consumer cog should re-pin its `.pkgmeta` Cogworks external to v0.17.0.
+
+Also the first release with a test suite — see **Added** below.
+
+### Fixed
+
+- **`ItemKeyToItemString` laid the bonus block one field early** (`Items.lua`, MODULE_MINOR `15 → 16`, COG-83) — the builder's `parts` table held 12 entries before appending the bonus count, so the count landed in `itemContext` (field 13) and the first real bonus ID landed in `numBonusIDs` (field 14). WoW then read that bonus ID as "how many bonus IDs follow" and swallowed the entire modifier block as bonus IDs. Every item level, tooltip, and link derived from an item key was wrong — in FlipQueue this surfaced as an item priced at level 19 against a true level nearer 74, i.e. a completely different auction-house bucket (flipqueue#249). The table now carries 13 leading fields so the count lands at 14. The function's own layout comment listed only 13 fields and omitted `itemContext` — a pre-Legion layout, and the likely origin of the error — and has been corrected alongside the code.
+
+  Verified against 494 client-authored item links harvested from Syndicator's SavedVariables: the corrected builder round-trips **494/494**, the previous one **0/494**. Note this was never an edge case — it was every item with a bonus or modifier block. `lib:ParseItemLink` already read `parts[14]` correctly, so parse and build disagreed; that asymmetry is what the new round-trip spec pins.
+
+- **`ShowLoading` leaked a frame tree on every call** (`Loading.lua`, MODULE_MINOR `1 → 2`, COG-81) — the banner, its dim overlay, dots frame, animation ticker, and progress bar were created per call, and `handle:Hide()` only hid them. WoW frames cannot be destroyed, so each call orphaned its whole tree for the session. Banners are now built once and recycled through `lib._loadingPool`; `Hide()` returns the record to the pool. Measured against the new spec: 50 show/hide cycles allocated **200 frames** before, **0** now.
+
+  This became urgent rather than theoretical when FlipQueue routed every generator filter toggle and allocation-priority reorder through `ShowLoading` to fix a client freeze — a player adjusting filters was minting a frame tree per interaction, inside the very alpha that existed to fix a memory blowup.
+
+  Two reuse hazards are handled explicitly. **Stale handles**: callers legitimately hold a handle across superseded runs, so each acquire bumps a generation counter and a handle whose generation has passed is inert — a late `Hide()` from a superseded run can no longer close a banner that has since been reissued to someone else. **`UISpecialFrames`**: a pooled frame keeps its global name, so registration is presence-checked on both sides and a non-cancelable reuse clears any prior entry. `Hide()` remains idempotent.
+
+- **Malformed modifiers desynced the modifier count** (`Items.lua`, MODULE_MINOR `15 → 16`, COG-83) — the modifier count was taken from the raw `:`-split while only entries matching `type=value` were emitted, so a key like `222;1663;9=50:garbage` wrote a count of 2 with a single pair behind it, corrupting everything after the block. The count is now taken from the pairs that actually parse, and a modifier string where nothing parses omits the block entirely rather than writing a count with no pairs behind it. Found while porting FlipQueue's acceptance spec, which covered this case; it is fixed here so consumers reach parity with the local override they were carrying.
+
+### Changed
+
+- **TOC interface bumped to `120100`** (WoW 12.1.0), dropping the multi-TOC `120005, 120001` pair per the technical-standards §11 policy of going forward-only on the release after a patch. Cogworks bumps first; consumer cogs follow (tempo#8, maxcraft#5, tally#93).
+
+### Changed
+
+- **`DebugPrint`'s ring buffer is now circular** (`Debug.lua`, MODULE_MINOR `4 → 5`, COG-82) — `appendEntry` appended then did `table.remove(ring, 1)`, so every call past the first `ringMax` (default 500) shifted the entire array down one slot. That cost was paid on every call **regardless of whether debug was enabled**, because the ring records unconditionally by design. Writes are now O(1); the ordering is reconstructed on read, which is rare (opening the console, copying the log). `joinArgs` also gained a fast path for the single-argument case, which is the overwhelmingly common shape and previously allocated a table plus a `table.concat` for one string.
+
+  This matters because consumer cogs have `DebugPrint` on genuinely hot paths — per-auction inside a 50k–200k replicate harvest, per-item on a pricing pass that re-runs every 2s. FlipQueue had gated its three hottest sites behind a local check to buy back frame time, at the cost of those lines no longer reaching the ring at all; two of them were exactly what `/fq debug pricesource` needs. Those guards can now come off.
+
+  **Contract note:** `lib:GetDebugEntries` and `logger:GetEntries` return entries oldest-first as before, but now return a **fresh table** rather than the library's live storage — once the ring wraps, the storage order is cyclic and cannot be handed out directly. Every known caller iterates the result immediately and is unaffected; a caller that cached the table identity across calls would need to re-read. `d.ringStart` / `d.ringCount` initialize lazily from a plain array, so a record built by an older vendored `Debug.lua` migrates correctly rather than restarting at slot 1 and overwriting live entries.
+
+### Added
+
+- **`lib:DebugPrintf(cogName, fmt, ...)`** (`Debug.lua`, MODULE_MINOR `4 → 5`, COG-82) — formatted variant of `DebugPrint`, equivalent to `DebugPrint(cog, string.format(...))` without the intermediate table and without the caller building a concatenation at the call site. Note it does **not** defer the format: the ring records unconditionally by design, so the entry is always wanted and there is nothing to defer. The issue floated a lazy-eval form; it was not taken, because storing raw arguments to format later would retain references to caller state of arbitrary lifetime for the length of the ring. `lib:IsDebugEnabled(cogName)` is documented as the blessed guard for genuinely hot sites, with its tradeoff stated at the definition — a guarded line is also absent from the ring.
+
+- **Headless test suite** (`test/`, new) — Cogworks had no tests, which is how a builder that laid the item-string bonus block one field early shipped for fifteen releases and was caught downstream as a wrong auction price. 98 assertions across three specs, all runnable under stock Lua 5.1 and wired to CI in `.github/workflows/tests.yml` on every push and PR.
+
+  - `itemstring_spec.lua` (40) — pins the item-string field layout against synthetic shapes and five real client-authored strings. Ported from FlipQueue's spec of the same name and kept compatible with it, so specs move between repos unmodified.
+  - `debugring_spec.lua` (24) — pins circular-buffer ordering, wrap behaviour, `ringMax` changes, and migration from a plain array written by an older vendored copy.
+  - `loadingpool_spec.lua` (34) — pins pool reuse, allocation counts, stale-handle inertness, `UISpecialFrames` balance, and cancel-path semantics.
+  - `wow_shim.lua` — minimal WoW globals, a frame stub that dispatches `OnShow`/`OnHide` the way the client does, and a `loadLibFunction` helper that lifts a single function out of a module without standing up LibStub.
+
+  Each spec was verified to fail against the code it replaces: 22 failures for the item-string layout, 7 for the loading pool (including 200 leaked frames across 50 cycles). A regression test that cannot fail proves nothing.
+
+- **`test/` excluded from the release zip** (`.pkgmeta`) — CI-only. Added as a substring pattern after checking for collisions, per the COG-55 note in that file.
+
+### Notes
+
+- **No API removals or signature changes.** `ItemKeyToItemString`, `ShowLoading`, and `DebugPrint` all take the same arguments and return the same shapes. The one behavioural change a caller could observe is `GetDebugEntries` returning a fresh table, described above.
+- **FlipQueue carries two workarounds this release retires.** A local override of `ItemKeyToItemString` in `Core.lua` with a `ROLLBACK:` block (flipqueue#249), and local `IsDebugEnabled` guards on its three hottest debug sites. Once pinned to v0.17.0 both can come out.
+- Sibling-cog sweep: FlipQueue is the only consumer of `ItemKeyToItemString`. Tally vendors the library but has no direct callers; Tempo and Maxcraft do not use it. No other cog inherited the defect.
+- Consumer pin status at release: FlipQueue and Tally are on v0.16.0; **Tempo and Maxcraft are still pinned to `v0.1.0`** and should jump straight to v0.17.0 (tempo#8, maxcraft#5).
+
 ## [0.16.0] — 2026-06-26 — Widget batch: filters, dropdowns, nav, toasts, anchored popups, richer tables
 
 Bumps `MINOR` from `30` to `31`. A batch of additive widget primitives drawn from the FlipQueue v0.13 adoption audit (FQ #143) plus a player-facing toast control. Every addition is opt-in — existing call sites are bit-exact unless they pass the new options. Consumer cogs should re-pin their `.pkgmeta` Cogworks external to v0.16.0.

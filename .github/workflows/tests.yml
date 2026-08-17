@@ -1,0 +1,36 @@
+name: tests
+
+# Headless specs under test/. Cogworks had no test suite at all until COG-83 —
+# a builder that laid the item-string bonus block one field early shipped for
+# fifteen releases and was only caught downstream, in FlipQueue, as a wrong
+# auction price. The library fans out into four addons, so a regression here
+# reaches players who never installed Cogworks knowingly. Run them on every push.
+#
+# Mirrors flipqueue/.github/workflows/tests.yml so specs port between repos.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  specs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Run specs
+        run: |
+          status=0
+          for spec in test/*_spec.lua; do
+            echo "::group::$spec"
+            if ! lua5.1 "$spec"; then
+              echo "::error file=$spec::spec failed"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status

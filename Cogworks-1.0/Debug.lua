@@ -42,7 +42,7 @@
 local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
-local MODULE_MINOR = 4
+local MODULE_MINOR = 5
 lib._modules = lib._modules or {}
 if (lib._modules.Debug or 0) >= MODULE_MINOR then return end
 lib._modules.Debug = MODULE_MINOR
@@ -75,6 +75,11 @@ end
 local function joinArgs(...)
   local n = select("#", ...)
   if n == 0 then return "" end
+  -- Fast path: the overwhelmingly common shape is a single already-built
+  -- string. Skip the table + concat allocation for it (COG-82) — DebugPrint
+  -- sits on hot paths in consumer cogs (per-auction inside a replicate
+  -- harvest, per-item on a repeating pricing pass).
+  if n == 1 then return tostring((...)) end
   local parts = {}
   for i = 1, n do parts[i] = tostring((select(i, ...))) end
   return table.concat(parts, " ")
@@ -87,9 +92,75 @@ local function fireAppend(d)
   end
 end
 
+-- ============================================================================
+-- Ring buffer (COG-82)
+-- ============================================================================
+-- The ring records every DebugPrint whether or not chat echo is enabled — a
+-- deliberate feature, since the console can show history you didn't know you
+-- wanted. What was not deliberate: appendEntry used to do
+--
+--   d.ring[#d.ring + 1] = line
+--   if #d.ring > d.ringMax then table.remove(d.ring, 1) end
+--
+-- so every call past the first `ringMax` (default 500) shifted the whole array
+-- down one slot — O(ringMax) per call, on hot paths, with debug off. It is now
+-- a true circular buffer: writes are O(1) and the ordering is reconstructed on
+-- read, which is rare (opening the console, copying the log).
+--
+-- Layout: `d.ring` holds up to `ringMax` slots used cyclically. `d.ringStart`
+-- is the slot holding the OLDEST entry; `d.ringCount` is how many are live.
+--
+-- Both fields initialize lazily from a plain array, so a `d` record created by
+-- an older vendored Debug.lua (which stored entries contiguously, oldest at 1)
+-- migrates correctly the first time this copy touches it. That matters here:
+-- `lib._debug` is guarded state shared across load order, so a newer module
+-- can inherit records an older one built.
+
+local function ringInit(d)
+  d.ringStart = d.ringStart or 1
+  d.ringCount = d.ringCount or #d.ring
+  return d
+end
+
+-- Rewrite the ring to contiguous oldest-first order starting at slot 1.
+-- Called when the ordering must be materialized in place — on ringMax change,
+-- where the modular arithmetic would otherwise be reinterpreted against a
+-- different modulus.
+local function ringNormalize(d)
+  ringInit(d)
+  if d.ringStart == 1 then return d end
+  local ordered, max = {}, d.ringMax
+  for i = 0, d.ringCount - 1 do
+    ordered[i + 1] = d.ring[((d.ringStart - 1 + i) % max) + 1]
+  end
+  for i = #d.ring, 1, -1 do d.ring[i] = nil end
+  for i = 1, #ordered do d.ring[i] = ordered[i] end
+  d.ringStart = 1
+  return d
+end
+
+-- Entries oldest-first. Returns a fresh table: the storage order is cyclic
+-- once the ring has wrapped, so the live array cannot be handed out directly.
+local function ringEntries(d)
+  ringInit(d)
+  local out, max = {}, d.ringMax
+  for i = 0, d.ringCount - 1 do
+    out[i + 1] = d.ring[((d.ringStart - 1 + i) % max) + 1]
+  end
+  return out
+end
+
 local function appendEntry(d, line)
-  d.ring[#d.ring + 1] = line
-  if #d.ring > d.ringMax then table.remove(d.ring, 1) end
+  ringInit(d)
+  local max = d.ringMax
+  if d.ringCount < max then
+    d.ring[((d.ringStart - 1 + d.ringCount) % max) + 1] = line
+    d.ringCount = d.ringCount + 1
+  else
+    -- Full: overwrite the oldest slot and walk the start forward.
+    d.ring[d.ringStart] = line
+    d.ringStart = (d.ringStart % max) + 1
+  end
   fireAppend(d)
 end
 
@@ -100,7 +171,18 @@ end
 function lib:RegisterDebugLogger(cogName, opts)
   opts = opts or {}
   local d = ensureCog(cogName)
-  if opts.ringMax  then d.ringMax  = opts.ringMax end
+  if opts.ringMax and opts.ringMax ~= d.ringMax then
+    -- Flatten to oldest-first before changing the modulus, then drop the
+    -- oldest entries if the new cap is smaller.
+    ringNormalize(d)
+    d.ringMax = opts.ringMax
+    if d.ringCount > d.ringMax then
+      local drop = d.ringCount - d.ringMax
+      for i = 1, d.ringMax do d.ring[i] = d.ring[i + drop] end
+      for i = d.ringMax + 1, #d.ring do d.ring[i] = nil end
+      d.ringCount = d.ringMax
+    end
+  end
   if opts.enabled ~= nil then d.enabled = opts.enabled and true or false end
 
   if d._loggerObj then return d._loggerObj end
@@ -108,7 +190,7 @@ function lib:RegisterDebugLogger(cogName, opts)
   local logger = {}
   logger.cog = cogName
   function logger:PrintDebug(...)  return lib:DebugPrint(cogName, ...) end
-  function logger:GetEntries()     return d.ring end
+  function logger:GetEntries()     return ringEntries(d) end
   function logger:Clear()          return lib:ClearDebugLog(cogName) end
   function logger:OnAppend(cb)
     if type(cb) == "function" then d.appendCbs[#d.appendCbs + 1] = cb end
@@ -131,14 +213,45 @@ function lib:DebugPrint(cogName, ...)
   end
 end
 
+-- Formatted variant (COG-82). Equivalent to DebugPrint(cog, string.format(...))
+-- but without joinArgs' intermediate table, and without the caller building a
+-- concatenation at the call site:
+--
+--   lib:DebugPrint(cog, "scanned " .. n .. " of " .. total)   -- 2 temporaries
+--   lib:DebugPrintf(cog, "scanned %d of %d", n, total)        -- 1
+--
+-- Note this does NOT defer the format: the ring records unconditionally by
+-- design, so the entry is always wanted and there is nothing to defer. To skip
+-- the work entirely on a genuinely hot site, guard it with IsDebugEnabled --
+-- accepting that guarded lines then stay out of the ring too.
+function lib:DebugPrintf(cogName, fmt, ...)
+  local d   = ensureCog(cogName)
+  local msg = select("#", ...) > 0 and string.format(fmt, ...) or fmt
+  appendEntry(d, date("%H:%M:%S") .. "  " .. msg)
+  if d.enabled then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[" .. cogName .. " debug]|r " .. msg)
+  end
+end
+
 function lib:ClearDebugLog(cogName)
   local d = ensureCog(cogName)
   for i = #d.ring, 1, -1 do d.ring[i] = nil end
+  d.ringStart, d.ringCount = 1, 0
   fireAppend(d)
 end
 
-function lib:GetDebugEntries(cogName) return ensureCog(cogName).ring end
+-- Entries oldest-first. COG-82: this returns a fresh table rather than the
+-- library's live storage, because the storage order is cyclic once the ring
+-- wraps. Callers that iterate the result (every known one) are unaffected;
+-- callers that cached the table identity across calls would need to re-read.
+function lib:GetDebugEntries(cogName) return ringEntries(ensureCog(cogName)) end
 function lib:SetDebugEnabled(cogName, b) ensureCog(cogName).enabled = b and true or false end
+-- The blessed guard for genuinely hot call sites (COG-82). Cheap enough to sit
+-- inside a per-item loop. Note the tradeoff a guard buys and costs: it skips
+-- the timestamp, the message build, and the ring write -- which also means the
+-- guarded lines are absent from the ring when someone later opens the console
+-- to diagnose what happened. Guard the sites that fire thousands of times per
+-- second; leave the rest unguarded so they stay recoverable after the fact.
 function lib:IsDebugEnabled(cogName) return ensureCog(cogName).enabled end
 
 -- ============================================================================
@@ -376,8 +489,9 @@ function lib:DumpDebugState(cogName)
     parts[#parts + 1] = ""
   end
 
-  parts[#parts + 1] = "[Recent debug log (" .. #d.ring .. " of " .. d.ringMax .. ")]"
-  for _, line in ipairs(d.ring) do parts[#parts + 1] = line end
+  local entries = ringEntries(d)
+  parts[#parts + 1] = "[Recent debug log (" .. #entries .. " of " .. d.ringMax .. ")]"
+  for _, line in ipairs(entries) do parts[#parts + 1] = line end
 
   return table.concat(parts, "\n")
 end
@@ -557,7 +671,7 @@ function lib:CreateDebugConsole(opts)
     local on_label = on and ("|cff30d530ON|r")
                        or ("|cffaa3030OFF|r")
     statusFs:SetText(string.format("Debug echo: %s   |cff888888• %d log entries  • %d profile labels  • %d inspectors  • %d actions|r",
-      on_label, #d.ring, (function() local n=0; for _ in pairs(d.profile) do n=n+1 end; return n end)(),
+      on_label, ringInit(d).ringCount, (function() local n=0; for _ in pairs(d.profile) do n=n+1 end; return n end)(),
       #d.inspectors, #d.actions))
   end
   f._refreshStatus()
@@ -935,8 +1049,9 @@ function lib:CreateDebugConsole(opts)
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -pad, -pad)
 
     local copyBtn = lib:CreateButton(row, "Copy log", 90, 22, function()
-      local dlg = lib:CreateCopyDialog(table.concat(d.ring, "\n"),
-        "#" .. #d.ring .. " entries  —  Ctrl+A then Ctrl+C")
+      local entries = ringEntries(d)
+      local dlg = lib:CreateCopyDialog(table.concat(entries, "\n"),
+        "#" .. #entries .. " entries  —  Ctrl+A then Ctrl+C")
       dlg:Show()
     end)
     copyBtn:SetPoint("LEFT", 0, 0)
@@ -974,9 +1089,10 @@ function lib:CreateDebugConsole(opts)
     function f._refreshLog()
       -- Show the last N lines that fit comfortably (cap to avoid huge font work)
       local maxLines = 400
-      local startIdx = math.max(1, #d.ring - maxLines + 1)
+      local entries  = ringEntries(d)
+      local startIdx = math.max(1, #entries - maxLines + 1)
       local lines = {}
-      for i = startIdx, #d.ring do lines[#lines + 1] = d.ring[i] end
+      for i = startIdx, #entries do lines[#lines + 1] = entries[i] end
       fs:SetText(table.concat(lines, "\n"))
       content:SetHeight(math.max(1, fs:GetStringHeight() + 4))
       content:SetWidth(scroll:GetWidth())
