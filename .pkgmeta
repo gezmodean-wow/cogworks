@@ -35,6 +35,11 @@ ignore:
   - .github
   - docs
   - feedback
+  # Headless Lua 5.1 specs (COG-83) — CI-only, never shipped to players.
+  # Safe as a substring pattern: the only other path containing "test" is
+  # .github/workflows/tests.yml, which .github already excludes. See the
+  # COG-55 note below before adding any short pattern here.
+  - test
   # NOTE: `Art/inner` was previously listed here to skip source PNGs at the
   # top-level `Art/inner/` directory. BigWigsMods packager treats ignore
   # patterns as substring matches against every path it visits, so the same

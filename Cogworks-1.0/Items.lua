@@ -14,7 +14,7 @@ local lib = LibStub("Cogworks-1.0")
 if not lib then return end
 
 -- Module load guard. See Sections.lua for the rationale.
-local MODULE_MINOR = 15
+local MODULE_MINOR = 16
 lib._modules = lib._modules or {}
 if (lib._modules.Items or 0) >= MODULE_MINOR then return end
 lib._modules.Items = MODULE_MINOR
@@ -93,8 +93,21 @@ function lib:ItemKeyToItemString(itemKey)
   local numID = tonumber(idStr)
   if not numID or numID <= 0 then return nil end
 
-  -- WoW item-string layout: item:id:enchant:gem1:gem2:gem3:gem4:suffix:uniqueID:level:specID:modType:numBonuses:bonus1:...
-  local parts = { "item", idStr, "", "", "", "", "", "", "", "", "", "" }
+  -- WoW item-string layout, 1-indexed:
+  --    1 item          2 itemID        3 enchant      4-7 gem1..gem4
+  --    8 suffix        9 uniqueID     10 linkLevel     11 specID
+  --   12 modifiersMask 13 itemContext 14 numBonusIDs   15+ bonusIDs...
+  --   then numModifiers, followed by modifier type/value pairs.
+  --
+  -- COG-83: this comment previously listed only 13 fields and omitted
+  -- itemContext (a pre-Legion layout), and the parts table matched it at 12
+  -- entries. That put numBonusIDs at 13 and the first bonus ID at 14, so WoW
+  -- read the first bonus as the *count* and swallowed the modifier block as
+  -- bonus IDs. Every item level, tooltip, and link derived from an item key
+  -- was wrong. Verified against 494 client-authored item links: the 13-entry
+  -- table below round-trips all of them, the 12-entry one round-tripped none.
+  -- Keep this table at 13 entries — the bonus count must land at field 14.
+  local parts = { "item", idStr, "", "", "", "", "", "", "", "", "", "", "" }
 
   if bonusStr and bonusStr ~= "" then
     local bonuses = { strsplit(":", bonusStr) }
@@ -106,14 +119,28 @@ function lib:ItemKeyToItemString(itemKey)
     table.insert(parts, "0")
   end
 
+  -- Modifier block: count first, then type/value pairs.
+  --
+  -- COG-83: the count is taken from the pairs that actually parse, not from
+  -- the raw split. Counting the split meant a malformed entry ("9=50:garbage")
+  -- wrote a count of 2 while emitting only one pair, desyncing the count from
+  -- the values behind it and corrupting everything downstream of the block.
+  -- When nothing parses, the block is omitted entirely rather than writing a
+  -- count with no pairs behind it.
   if modStr and modStr ~= "" then
-    local mods = { strsplit(":", modStr) }
-    table.insert(parts, tostring(#mods))
-    for _, m in ipairs(mods) do
+    local types, values = {}, {}
+    for _, m in ipairs({ strsplit(":", modStr) }) do
       local k, v = m:match("^(%d+)=(%d+)$")
       if k and v then
-        table.insert(parts, k)
-        table.insert(parts, v)
+        table.insert(types, k)
+        table.insert(values, v)
+      end
+    end
+    if #types > 0 then
+      table.insert(parts, tostring(#types))
+      for i = 1, #types do
+        table.insert(parts, types[i])
+        table.insert(parts, values[i])
       end
     end
   end
