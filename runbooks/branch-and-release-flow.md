@@ -127,3 +127,5 @@ Solo-dev caveat: don't require *reviewers* — that just blocks you from merging
 ## Last exercised
 
 _New runbook; not yet exercised. Append a `## Last exercised: YYYY-MM-DD — <issue ID>` line each time this flow drives a real release._
+
+## Last exercised: 2026-08-19 — flipqueue v0.13.2 (public stable; pre-tag-check F1–F7 green, F8 waived on maintainer direction with live tester exposure across the alpha line)
